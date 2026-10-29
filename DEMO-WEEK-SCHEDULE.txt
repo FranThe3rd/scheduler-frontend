@@ -1,0 +1,64 @@
+Bethlehem Dairy Store — demo weekly schedule (mock app data)
+================================================================
+
+Note for anyone on this repo
+----------------------------
+The first commits had a lot of LLM, DNA, and photo/OCR ideas. We are working backwards on purpose now.
+Basics first: roster, weekly grid, edit shifts, copy a week, print or export PDF for employees.
+Backend for Mike as admin is next. Smart features can wait.
+
+Not sure we need DNA or LLM for v1. Mike can build schedules in the app and PDF them out.
+ChatGPT was bad at reading pictures of the paper schedule anyway.
+Why take pics if he can just make them here?
+
+If you have thoughts on what the app must do before we add anything fancy, say so.
+
+Week: Monday Oct 5, 2026 through Sunday Oct 11, 2026
+Source of truth in code: src/lib/mock/oct2025Schedule.ts (SCHEDULE_ROWS)
+Open in app: http://localhost:3000/  (defaults to this week when mock loads)
+
+How to read cells
+-----------------
+  —     Blank on the paper row (not treated as off in the app; no shift stored)
+  9-1   Main store hours (no L suffix)
+  6-10 L   Lehigh — same hours with L on the sheet
+  IC    Ice cream only (no time range on the sheet)
+  Unclear   Needs manager verification (availability flag, not a shift)
+
+Row order matches the paper schedule (not alphabetical).
+
+Mon 10/05   Tue 10/06   Wed 10/07   Thu 10/08   Fri 10/09   Sat 10/10   Sun 10/11
+---------------------------------------------------------------------------------
+
+M. Zweifel      9-1         12-3        9-1         12-3        9-1         —           —
+F. Makary       —           —           —           —           —           —           —
+B. Clausnitzer  12-5        —           12-5        —           12-5        —           —
+J. Stone        6-10        —           6-10        —           6-10        —           6-10
+M. Wagner       IC          IC          —           —           —           9-1         6-10
+J. Roman        —           —           —           —           7-10        —           —
+B. Dosedlo      12-6        9-3         12-6        9-3         11-5        —           —
+Lexy/Brooke     —           7-10        —           7-10        —           —           9-1
+D. Smith        —           IC          —           12-6 L      —           12-6        12-6
+T. DeAngelis    1-6         7-10        1-6         —           1-5         —           6-10
+B. Dologite     —           —           5-10 L      —           5-10 L      1-6 L       1-6 L
+M. Enriquez     —           3-6         7-10        —           —           —           6-10
+L. Cramer       —           —           6-10        3-6         —           6-10        1-6
+B. Roth         —           —           —           —           5-10        6-10        1-6
+A. Giesler      —           6-10        —           6-10        —           6-10        6-10
+A. Cheatham     6-10        1-6 L       7-10        —           —           3-10        —
+N. Bennick      6-10        6-10        —           6-10        —           —           —
+C. Rittle       7-10        6-10 L      —           6-10 L      6-10        —           —
+N. Miller       5-10 L      3-6         —           —           5-10        6-10 L      6-10 L
+Kourtney        —           —           6-10        7-10        7-10        1-6         —
+A. Horvath      6-10 L      —           —           —           —           —           6-10 L
+T. Langensiepen —           6-10        —           3-6         7-10        6-10 L      6-10
+A. Saez         —           6-10 L      —           6-10 L      —           —           —
+E. Braido       7-10        —           —           6-10        —           6-10        —
+
+Mock behavior (testing)
+-----------------------
+  • Loading week 2026-10-05 in the app uses the rows above.
+  • Edits and deletes apply to in-memory mock data for the current browser session.
+  • A full page reload re-inits mock memory and restores SCHEDULE_ROWS.
+  • To restore the demo grid without reloading: GET /api/bootstrap?week=2026-10-05&resetDemo=1
+    (or bump MOCK_DATA_VERSION in src/lib/mock/store.ts).
