@@ -1,14 +1,14 @@
 "use client";
 
 import { format, parseISO } from "date-fns";
-import { chipStyle } from "@/components/shiftChip";
+import { shiftPlaceKind, shiftPlaceLabel } from "@/components/shiftChip";
+import { WeekBoard } from "@/components/WeekBoard";
 import {
   availabilityCellFor,
-  availabilityShortLabel,
   shiftAvailabilityConflict,
 } from "@/components/availabilityTone";
 import { buildShortNames } from "@/lib/displayName";
-import { shiftToCellText } from "@/lib/shiftCellText";
+import { formatShiftTimes } from "@/lib/time";
 import type { Employee, Shift, WeekAvailability } from "@/lib/types";
 
 export type GridRow = { id: string; name: string };
@@ -51,9 +51,15 @@ export function shiftsForRow(shifts: Shift[], rowId: string, date: string): Shif
     .sort((a, b) => (a.startMinutes ?? 0) - (b.startMinutes ?? 0));
 }
 
+function shiftTimeLabel(shift: Shift): string {
+  if (shift.department === "ic" && shift.startMinutes == null && shift.endMinutes == null) return "IC";
+  return formatShiftTimes(shift.startMinutes, shift.endMinutes);
+}
+
 /**
  * Whole week on one screen: people down the side, Mon–Sun across the top.
- * Used by the manager's Schedule tab (tappable) and the read-only team schedule.
+ * Same geometry as the availability board. Used by the manager's Schedule tab
+ * (tappable) and the read-only team schedule.
  */
 export function CompactWeekGrid({
   dates,
@@ -61,134 +67,79 @@ export function CompactWeekGrid({
   shifts,
   availability,
   selectedDate,
+  highlightRowId,
   onCell,
   onDay,
+  density = "regular",
 }: {
   dates: string[];
   rows: GridRow[];
   shifts: Shift[];
-  /** When set, empty cells show days off / limited hours and clashing shifts are flagged. */
+  /** When set, clashing shifts are flagged. Availability itself is not drawn in the cell. */
   availability?: WeekAvailability[];
   selectedDate?: string | null;
+  /** Logged-in employee row, on the read-only team schedule. */
+  highlightRowId?: string | null;
   /** When set, cells are tappable (add/edit). */
   onCell?: (rowId: string, date: string, cellShifts: Shift[]) => void;
   onDay?: (date: string) => void;
+  density?: "regular" | "desk";
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
-      <table className="w-full table-fixed border-collapse text-center">
-        <colgroup>
-          <col style={{ width: "4.25rem" }} />
-          {dates.map((date) => (
-            <col key={date} />
-          ))}
-        </colgroup>
-        <thead>
-          <tr className="border-b border-[var(--border)] bg-[var(--surface-2)]">
-            <th className="px-2 py-1.5 text-left text-[11px] font-semibold text-[var(--muted)]">Employee</th>
-            {dates.map((date) => {
-              const active = selectedDate === date;
+    <WeekBoard
+      dates={dates}
+      rows={rows}
+      selectedDate={selectedDate}
+      highlightRowId={highlightRowId}
+      onDay={onDay}
+      density={density}
+      caption="Weekly schedule"
+      renderCell={(row, date) => {
+        const cellShifts = shiftsForRow(shifts, row.id, date);
+        const availabilityCell = row.id.startsWith("label:") ? null : availabilityCellFor(availability, row.id, date);
+        const conflicts = cellShifts.flatMap((shift) => {
+          const reason = shiftAvailabilityConflict(availabilityCell, shift);
+          return reason ? [reason] : [];
+        });
+        const content =
+          cellShifts.length > 0 ? (
+            cellShifts.map((shift) => {
+              const clash = shiftAvailabilityConflict(availabilityCell, shift);
               return (
-                <th key={date} className="p-0 text-[11px] font-semibold leading-tight">
-                  <button
-                    type="button"
-                    disabled={!onDay}
-                    onClick={() => onDay?.(date)}
-                    className={`w-full py-1.5 ${active ? "bg-[var(--chrome)] text-white" : "text-[var(--muted)]"}`}
-                  >
-                    <span className="block">{format(parseISO(date), "EEEEE")}</span>
-                    <span className="block font-normal">{format(parseISO(date), "d")}</span>
-                  </button>
-                </th>
+                <span
+                  key={shift.id}
+                  title={clash ?? undefined}
+                  className={`shift-pill shift-pill--${shiftPlaceKind(shift)} ${clash ? "shift-pill--clash" : ""}`}
+                >
+                  <span className="shift-pill-time">{shiftTimeLabel(shift)}</span>
+                  <span className="shift-pill-place">{shiftPlaceLabel(shift)}</span>
+                </span>
               );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} className="border-b border-[var(--border)] last:border-b-0">
-              <th scope="row" className="truncate px-2 py-1 text-left text-[13px] font-semibold">
-                {row.name}
-              </th>
-              {dates.map((date) => {
-                const cellShifts = shiftsForRow(shifts, row.id, date);
-                const availabilityCell = row.id.startsWith("label:")
-                  ? null
-                  : availabilityCellFor(availability, row.id, date);
-                const availabilityText = availabilityShortLabel(availabilityCell);
-                const conflicts = cellShifts.flatMap((shift) => {
-                  const reason = shiftAvailabilityConflict(availabilityCell, shift);
-                  return reason ? [reason] : [];
-                });
-                const content = cellShifts.length > 0 ? (
-                  <span className="flex w-full flex-col gap-0.5">
-                    {cellShifts.map((shift) => {
-                      const text = shiftToCellText(shift);
-                      const clash = shiftAvailabilityConflict(availabilityCell, shift);
-                      return (
-                        <span
-                          key={shift.id}
-                          title={clash ?? undefined}
-                          className={`block rounded-md px-px py-1 text-[10px] font-semibold leading-tight break-words ${chipStyle(text)} ${
-                            clash ? "ring-2 ring-inset ring-[var(--conflict)]" : ""
-                          }`}
-                        >
-                          {clash ? "! " : ""}
-                          {text}
-                        </span>
-                      );
-                    })}
-                  </span>
-                ) : availabilityText ? (
-                  <span
-                    className={`block py-1 text-[10px] font-semibold leading-tight ${
-                      availabilityText === "Off" ? "text-[#b0545c]" : "text-[#9a7a20]"
-                    }`}
-                  >
-                    {availabilityText}
-                  </span>
-                ) : (
-                  <span className="block py-1 text-[11px] text-[#cfc4b5]">{onCell ? "+" : "·"}</span>
-                );
-                const availabilityAria = availabilityText
-                  ? `, availability ${availabilityText === "Off" ? "off" : availabilityText}`
-                  : "";
-                const conflictAria = conflicts.length > 0 ? `, conflict: ${conflicts.join("; ")}` : "";
-                return (
-                  <td key={date} className={`p-0.5 align-middle ${selectedDate === date ? "bg-[#f3ece0]" : ""}`}>
-                    {onCell ? (
-                      <button
-                        type="button"
-                        className="flex min-h-9 w-full items-center justify-center rounded-md"
-                        aria-label={`${row.name}, ${format(parseISO(date), "EEEE MMM d")}, ${
-                          cellShifts.length > 0 ? cellShifts.map(shiftToCellText).join(" and ") : "no shift"
-                        }${availabilityAria}${conflictAria}`}
-                        onClick={() => onCell(row.id, date, cellShifts)}
-                      >
-                        {content}
-                      </button>
-                    ) : (
-                      <div className="flex min-h-9 items-center justify-center">{content}</div>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t border-[var(--border)] bg-[var(--surface-2)]">
-            <th scope="row" className="px-2 py-1.5 text-left text-[11px] font-semibold text-[var(--muted)]">
-              Working
-            </th>
-            {dates.map((date) => (
-              <td key={date} className="py-1.5 text-xs font-bold tabular-nums">
-                {staffOnDate(shifts, date)}
-              </td>
-            ))}
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+            })
+          ) : (
+            <span className="week-board-dash" aria-hidden>
+              —
+            </span>
+          );
+        const conflictAria = conflicts.length > 0 ? `, conflict: ${conflicts.join("; ")}` : "";
+        const label = `${row.name}, ${format(parseISO(date), "EEEE MMM d")}, ${
+          cellShifts.length > 0
+            ? cellShifts.map((shift) => `${shiftTimeLabel(shift)} ${shiftPlaceLabel(shift)}`).join(" and ")
+            : "no shift"
+        }${conflictAria}`;
+        if (onCell) {
+          return (
+            <button type="button" className="week-board-cell" aria-label={label} onClick={() => onCell(row.id, date, cellShifts)}>
+              {content}
+            </button>
+          );
+        }
+        return (
+          <div className="week-board-cell" aria-label={label}>
+            {content}
+          </div>
+        );
+      }}
+    />
   );
 }

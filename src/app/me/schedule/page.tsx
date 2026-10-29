@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { addDays, format, parseISO } from "date-fns";
-import { Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { PageFrame } from "@/components/PageFrame";
-import { MotionItem, MotionReveal } from "@/components/MotionReveal";
 import { useAuth } from "@/components/AuthProvider";
 import { ScheduleExportButtons } from "@/components/ScheduleExportButtons";
 import { useWeekBootstrap } from "@/components/useWeekBootstrap";
@@ -16,20 +15,8 @@ import {
   subscribePublishedSchedule,
   type PublishedSchedule,
 } from "@/lib/publishedSchedules";
-import { formatShiftTimes, formatWeekRange, shiftDurationHours, thisWeekMondayNy } from "@/lib/time";
-import type { Shift } from "@/lib/types";
-
-function shiftTone(shift: Shift): { bar: string; bg: string } {
-  if (shift.department === "ic") return { bar: "#8fb0e0", bg: "#e3ecf9" };
-  if (shift.location === "lehigh") return { bar: "#e0b93a", bg: "#fbf1c4" };
-  return { bar: "#7fbf7b", bg: "#e6f2df" };
-}
-
-function placeLabel(shift: Shift): string {
-  const place = shift.location === "lehigh" ? "Lehi" : shift.location === "linden" ? "Linden" : "";
-  if (shift.department === "ic") return place ? `Ice Cream · ${place}` : "Ice Cream";
-  return place || "Location needed";
-}
+import { shiftPlaceLabel } from "@/components/shiftChip";
+import { formatShiftTimes, formatWeekRange, shiftDurationHours, thisWeekMondayNy, weekDates } from "@/lib/time";
 
 export default function MySchedulePage() {
   const { weekStart, setWeekStart, data, error } = useWeekBootstrap();
@@ -134,28 +121,26 @@ export default function MySchedulePage() {
         {status}
         {range ? ` · ${range}` : ""}
       </p>
-      <div className="mt-4 flex items-center justify-between gap-2 rounded-2xl bg-[var(--surface)] px-2 py-1">
+      <div className="mt-4 inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] p-1">
         <button
           type="button"
-          className="min-h-11 min-w-11 rounded-full text-xl"
+          className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-[var(--surface-2)]"
           aria-label="Previous week"
           onClick={() => shiftWeek(-7)}
         >
-          ‹
+          <ChevronLeft size={18} />
         </button>
-        <div className="text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-            {weekStart === thisMonday ? "This week" : "Week"}
-          </p>
-          <p className="font-serif text-lg leading-tight">{formatWeekRange(weekStart)}</p>
-        </div>
+        <span className="px-1 text-sm font-semibold">
+          {weekStart === thisMonday ? "This week · " : ""}
+          {formatWeekRange(weekStart)}
+        </span>
         <button
           type="button"
-          className="min-h-11 min-w-11 rounded-full text-xl"
+          className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-[var(--surface-2)]"
           aria-label="Next week"
           onClick={() => shiftWeek(7)}
         >
-          ›
+          <ChevronRight size={18} />
         </button>
       </div>
       {approvedWeeks.length > 0 ? (
@@ -191,38 +176,50 @@ export default function MySchedulePage() {
           {shifts.length} {shifts.length === 1 ? "shift" : "shifts"} · {Number.isInteger(hours) ? hours : hours.toFixed(1)} hours
         </p>
       </section>
-      <MotionReveal stagger className="mt-3 grid gap-1.5 sm:grid-cols-2">
-        {!data ? (
-          <p className="text-sm text-[var(--muted)] sm:col-span-2">Loading schedule…</p>
-        ) : shifts.length === 0 ? (
-          <p className="card px-4 py-6 text-sm text-[var(--muted)] shadow-none sm:col-span-2">No shifts assigned this week.</p>
-        ) : (
-          shifts.map((shift) => {
-            const shiftHours = shiftDurationHours(shift.startMinutes, shift.endMinutes);
-            const tone = shiftTone(shift);
+      {!data ? (
+        <p className="mt-4 text-sm text-[var(--muted)]">Loading schedule…</p>
+      ) : (
+        <div className="mt-4 grid w-full grid-cols-7 gap-2" aria-label="Your week">
+          {weekDates(weekStart).map((date) => {
+            const dayShifts = shifts.filter((shift) => shift.date === date);
+            const working = dayShifts.length > 0;
             return (
-              <MotionItem key={shift.id}>
-                <article
-                  className="flex items-center gap-3 rounded-xl py-2 pl-3 pr-3"
-                  style={{ background: tone.bg, borderLeft: `4px solid ${tone.bar}` }}
-                >
-                  <div className="w-12 shrink-0 text-center leading-tight">
-                    <p className="text-[11px] font-semibold uppercase text-[var(--muted)]">{format(parseISO(shift.date), "EEE")}</p>
-                    <p className="font-serif text-xl">{format(parseISO(shift.date), "d")}</p>
+              <article
+                key={date}
+                className={`@container min-w-0 overflow-hidden rounded-2xl px-1.5 py-3 text-center sm:px-2 sm:py-4 ${
+                  working
+                    ? "bg-[var(--loc-linden-bg)] text-[var(--loc-linden-fg)]"
+                    : "border border-[var(--border)] bg-[var(--surface)]"
+                }`}
+              >
+                <p className="font-serif text-sm font-semibold leading-none @[7.75rem]:hidden">{format(parseISO(date), "EEE")}</p>
+                <p className="hidden truncate font-serif text-[clamp(0.95rem,16cqw,1.5rem)] font-semibold leading-none @[7.75rem]:block">{format(parseISO(date), "EEEE")}</p>
+                <p className={`mt-1 text-sm ${working ? "opacity-70" : "text-[var(--muted)]"}`}>{format(parseISO(date), "d")}</p>
+                {working ? (
+                  <div className="mt-3 space-y-3">
+                    {dayShifts.map((shift) => {
+                      const shiftHours = shiftDurationHours(shift.startMinutes, shift.endMinutes);
+                      return (
+                        <div key={shift.id}>
+                          <p className="text-xs font-semibold leading-tight sm:text-sm">{formatShiftTimes(shift.startMinutes, shift.endMinutes)}</p>
+                          <p className="mt-1 text-xs">
+                            {shiftHours ? `${Number.isInteger(shiftHours) ? shiftHours : shiftHours.toFixed(1)} hours` : "Duration needed"}
+                          </p>
+                          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide">{shiftPlaceLabel(shift)}</p>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">{formatShiftTimes(shift.startMinutes, shift.endMinutes)}</p>
-                    <p className="truncate text-xs text-[var(--muted)]">{placeLabel(shift)}</p>
-                  </div>
-                  <p className="shrink-0 text-xs font-semibold tabular-nums">
-                    {shiftHours ? `${Number.isInteger(shiftHours) ? shiftHours : shiftHours.toFixed(1)}h` : "—"}
+                ) : (
+                  <p className="mt-3 font-serif text-2xl leading-none text-[var(--faint)]" aria-label="Off">
+                    —
                   </p>
-                </article>
-              </MotionItem>
+                )}
+              </article>
             );
-          })
-        )}
-      </MotionReveal>
+          })}
+        </div>
+      )}
       {data ? (
         <div className="mt-4 space-y-2 text-center">
           <Link href={`/print/${weekStart}`} className="btn btn-ghost h-12 w-full rounded-full text-base md:w-auto md:min-w-64">

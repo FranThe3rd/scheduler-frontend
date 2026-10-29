@@ -4,30 +4,31 @@ import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { CalendarDays, ClipboardList, FileText, LayoutDashboard, List, Menu, X } from "lucide-react";
+import { CalendarDays, ChevronDown, FileText, Sparkles } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { useAdminRequests } from "@/components/useScheduleRequests";
 import { collapse, pageTransition } from "@/lib/motionPresets";
 
 const EMPLOYEE_NAV = [
-  { href: "/me/availability", label: "Calendar", icon: CalendarDays },
-  { href: "/me/schedule", label: "Schedule", icon: List },
+  { href: "/me/availability", label: "Availability", icon: CalendarDays },
+  { href: "/me/schedule", label: "Schedule", icon: FileText },
 ];
 
 /** Manager flow: check the week -> review availability & generate -> adjust & post. */
 const ADMIN_NAV = [
-  { href: "/admin/review", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/generate", label: "Generate", icon: ClipboardList },
+  { href: "/admin/review", label: "Calendar", icon: CalendarDays },
+  { href: "/admin/generate", label: "Generate", icon: Sparkles },
   { href: "/admin/edit", label: "Schedule", icon: FileText },
 ];
 
-/** Secondary manager pages live in the dropdown menu, not the tab bar. */
+/** Secondary manager pages live in the account menu, not the tab bar. */
 const ADMIN_MENU = [
   { href: "/employees", label: "Employees" },
   { href: "/admin/requests", label: "Approvals" },
 ];
 
-function navFor(pathname: string) {
+function navFor(pathname: string, isAdmin: boolean) {
+  if (pathname.startsWith("/print")) return isAdmin ? ADMIN_NAV : EMPLOYEE_NAV;
   if (pathname.startsWith("/me")) return EMPLOYEE_NAV;
   if (
     pathname.startsWith("/admin") ||
@@ -47,22 +48,16 @@ function linkIsActive(pathname: string, href: string) {
 export function AppHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const { signOut } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
   const { requests } = useAdminRequests();
   const pendingCount = requests?.filter((r) => r.status === "pending").length ?? 0;
-  const items = navFor(pathname);
+  const items = navFor(pathname, isAdmin);
   const admin = items === ADMIN_NAV;
   const [menuOpen, setMenuOpen] = useState(false);
   const reduce = useReducedMotion();
-  // Links shown inline in the desktop header.
-  const inlineLinks = admin
-    ? items.map((item) => ({ href: item.href, label: item.label }))
-    : [
-        { href: "/me/availability", label: "My availability" },
-        { href: "/me/schedule", label: "My schedule" },
-      ];
-  // Links in the dropdown menu. Managers get only the secondary pages (the tabs are always visible).
-  const menuLinks = admin ? ADMIN_MENU : inlineLinks;
+  const menuLinks = admin ? ADMIN_MENU : [];
+  const firstName = user?.displayName?.trim().split(/\s+/)[0] || "Account";
+  const initial = firstName.slice(0, 1).toUpperCase();
 
   function logOut() {
     setMenuOpen(false);
@@ -71,80 +66,65 @@ export function AppHeader() {
 
   return (
     <>
-      <header className={admin ? "waffle relative px-4 py-3 sm:px-6 lg:px-8" : "bg-[var(--bg)] px-4 pb-1 pt-4 sm:px-6 lg:px-8"}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className={`font-serif text-[15px] leading-tight sm:text-base ${admin ? "text-[#f7f1e6]" : "text-[var(--chrome)]"}`}>
-              Bethlehem Dairy Store
-            </p>
-            <p
-              className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${
-                admin ? "text-[#eadfce]" : "text-[var(--muted)]"
-              }`}
-            >
-              Staff scheduling
-            </p>
+      <header className="waffle relative px-4 py-3 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-7xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="font-serif text-[15px] leading-tight text-[#f7f1e6] sm:text-base">Bethlehem Dairy Store</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#eadfce]">Staff scheduling</p>
           </div>
           {items.length > 0 ? (
-            <div className="flex min-w-0 items-center gap-2">
-              <nav className="hidden min-w-0 items-center gap-1 md:flex" aria-label="Main">
-                {inlineLinks.map((link) => {
-                  const active = linkIsActive(pathname, link.href);
-                  return (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      aria-current={active ? "page" : undefined}
-                      className={`rounded-full px-3 py-2 text-sm font-semibold whitespace-nowrap ${
-                        admin
-                          ? active
-                            ? "bg-[#f7f1e6] text-[var(--chrome)]"
-                            : "text-[#f7f1e6] hover:bg-white/10"
-                          : active
-                            ? "bg-[var(--surface)] text-[var(--chrome)] shadow-sm"
-                            : "text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--chrome)]"
-                      }`}
-                    >
-                      {link.label}
-                    </Link>
-                  );
-                })}
-                {admin ? null : (
-                  <button
-                    type="button"
-                    className="rounded-full px-3 py-2 text-sm font-semibold text-[var(--muted)] hover:bg-[var(--surface)] hover:text-[var(--chrome)]"
-                    onClick={logOut}
+            <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
+              {items.map((link) => {
+                const active = linkIsActive(pathname, link.href);
+                const Icon = link.icon;
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold whitespace-nowrap ${
+                      active ? "bg-[#f7f1e6] text-[var(--chrome)]" : "text-[#f7f1e6] hover:bg-white/10"
+                    }`}
                   >
-                    Log out
-                  </button>
-                )}
-              </nav>
+                    <Icon size={15} strokeWidth={2.25} />
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          ) : null}
+          {items.length > 0 ? (
+            <div className="flex flex-1 justify-end">
               <button
                 type="button"
-                className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
-                  admin
-                    ? "bg-[#f7f1e6] text-[var(--chrome)]"
-                    : "bg-[var(--surface)] text-[var(--chrome)] shadow-sm md:hidden"
-                }`}
-                aria-label={admin && pendingCount > 0 ? `Menu, ${pendingCount} waiting for approval` : "Menu"}
+                className="relative inline-flex h-11 items-center gap-2 rounded-full bg-[#f7f1e6] py-1 pl-1 pr-2.5 text-[var(--chrome)]"
+                aria-label={
+                  admin && pendingCount > 0
+                    ? `Account menu for ${firstName}, ${pendingCount} waiting for approval`
+                    : `Account menu for ${firstName}`
+                }
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
               >
-                {menuOpen ? <X size={18} /> : <Menu size={18} />}
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--chrome)] text-sm font-semibold text-[#f7f1e6]">
+                  {initial}
+                </span>
+                <span className="hidden text-sm font-semibold sm:inline">{firstName}</span>
+                <ChevronDown size={15} />
                 {admin && pendingCount > 0 && !menuOpen ? (
                   <span className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full border-2 border-[#f7f1e6] bg-[#d4533f]" aria-hidden />
                 ) : null}
               </button>
             </div>
-          ) : null}
+          ) : (
+            <div className="flex-1" />
+          )}
         </div>
         <AnimatePresence initial={false}>
           {menuOpen ? (
             <motion.nav
-              className={`mt-3 overflow-hidden rounded-2xl bg-[var(--surface)] p-2 text-[var(--text)] shadow-sm ${
-                admin ? "md:absolute md:right-8 md:top-full md:z-50 md:mt-1 md:w-60 md:shadow-lg" : "md:hidden"
-              }`}
-              aria-label="Menu"
+              className="absolute right-4 top-full z-50 mt-1 w-60 overflow-hidden rounded-2xl bg-[var(--surface)] p-2 text-[var(--text)] shadow-lg sm:right-6 lg:right-8"
+              aria-label="Account"
               variants={reduce ? undefined : collapse}
               initial={reduce ? false : "hidden"}
               animate="show"

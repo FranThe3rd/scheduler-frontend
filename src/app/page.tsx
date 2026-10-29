@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { MotionItem, MotionReveal } from "@/components/MotionReveal";
+import { formatWeekRange, thisWeekMondayNy } from "@/lib/time";
 
 export default function WelcomePage() {
   const router = useRouter();
@@ -21,13 +22,10 @@ export default function WelcomePage() {
       </header>
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-6 pb-8 pt-10 sm:px-8">
         <MotionReveal>
-          <h2 className="text-center text-[2.25rem] leading-[1.05] text-[var(--chrome)] sm:text-[2.6rem]">
-            Staff
-            <br />
-            scheduling
-          </h2>
+          <h2 className="text-center text-[2.25rem] leading-[1.05] text-[var(--chrome)] sm:text-[2.6rem]">Who&apos;s working</h2>
+          <p className="mt-3 text-center text-sm text-[var(--muted)]">This week · {formatWeekRange(thisWeekMondayNy())}</p>
         </MotionReveal>
-        <MotionReveal stagger className="mt-10 space-y-3">
+        <MotionReveal stagger className="mt-8 space-y-3">
           <MotionItem>
             <button
               type="button"
@@ -62,7 +60,7 @@ export default function WelcomePage() {
         ) : null}
         <div className="mt-auto" />
       </main>
-      <div className="waffle h-16 sm:rounded-t-[42px]" aria-hidden />
+      <div className="waffle h-28 sm:h-36 sm:rounded-t-[42px]" aria-hidden />
     </div>
   );
 }

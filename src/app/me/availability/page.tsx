@@ -13,7 +13,7 @@ import { WeekSubmitPanel } from "@/components/WeekSubmitPanel";
 import { listMyRequests, subscribeMyRequests, type ScheduleRequest } from "@/lib/scheduleRequests";
 import { initialsFor } from "@/lib/createEmployee";
 import type { AvailabilityCell, Employee, WeekSchedule } from "@/lib/types";
-import { formatWeekRange, mondayOf } from "@/lib/time";
+import { mondayOf } from "@/lib/time";
 
 const LEGEND: AvailabilityTone[] = ["available", "limited", "off"];
 
@@ -30,8 +30,6 @@ export default function MyAvailabilityPage() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selected, setSelected] = useState<string | null>(null);
   const [pickedWeek, setPickedWeek] = useState<string | null>(null);
-  // Where the day editor shows: beside the calendar, or inside the week section below.
-  const [editorSpot, setEditorSpot] = useState<"calendar" | "panel">("calendar");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
@@ -40,14 +38,12 @@ export default function MyAvailabilityPage() {
   const [nameSaving, setNameSaving] = useState(false);
   const [mine, setMine] = useState<ScheduleRequest[]>([]);
   const calendarEditorRef = useRef<HTMLElement | null>(null);
-  const panelEditorRef = useRef<HTMLDivElement | null>(null);
 
   /** On phones the editor sits below the calendar; bring it into view after a tap. */
-  function revealEditor(spot: "calendar" | "panel") {
+  function revealEditor() {
     if (typeof window === "undefined" || window.matchMedia("(min-width: 1024px)").matches) return;
-    const target = spot === "calendar" ? calendarEditorRef.current : panelEditorRef.current;
     window.requestAnimationFrame(() => {
-      target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      calendarEditorRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   }
 
@@ -154,16 +150,6 @@ export default function MyAvailabilityPage() {
   const thisMonday = mondayKey(today ?? format(new Date(), "yyyy-MM-dd"));
   const panelWeek = pickedWeek ?? thisMonday;
 
-  /** Jump to a week (never before this week) and open its first day that hasn't passed. */
-  function goToWeek(monday: string) {
-    if (monday < thisMonday) return;
-    const firstOpenDay = today && monday < today ? today : monday;
-    setPickedWeek(monday);
-    setEditorSpot("calendar");
-    setSelected(firstOpenDay);
-    setMonth(startOfMonth(parseISO(firstOpenDay)));
-    setError(null);
-  }
   const selectedLocked =
     !!selected && mine.some((r) => r.weekStart === mondayKey(selected) && r.status === "approved");
 
@@ -260,32 +246,7 @@ export default function MyAvailabilityPage() {
           ) : null}
         </p>
       )}
-      <div className="mt-4 flex items-center justify-between gap-2 rounded-2xl bg-[var(--surface)] px-2 py-1">
-        <button
-          type="button"
-          className="min-h-11 min-w-11 rounded-full text-xl disabled:opacity-30"
-          aria-label="Previous week"
-          disabled={panelWeek <= thisMonday}
-          onClick={() => goToWeek(format(addDays(parseISO(panelWeek), -7), "yyyy-MM-dd"))}
-        >
-          ‹
-        </button>
-        <div className="text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-            {panelWeek === thisMonday ? "This week" : "Week"}
-          </p>
-          <p className="font-serif text-lg leading-tight">{formatWeekRange(panelWeek)}</p>
-        </div>
-        <button
-          type="button"
-          className="min-h-11 min-w-11 rounded-full text-xl"
-          aria-label="Next week"
-          onClick={() => goToWeek(format(addDays(parseISO(panelWeek), 7), "yyyy-MM-dd"))}
-        >
-          ›
-        </button>
-      </div>
-      <div className="mt-4 grid gap-6 lg:grid-cols-2 lg:items-start">
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)]">
         <div>
           <MonthCalendar
             month={month}
@@ -299,16 +260,15 @@ export default function MyAvailabilityPage() {
             onSelectDate={(date) => {
               setSelected(date);
               setPickedWeek(mondayKey(date));
-              setEditorSpot("calendar");
-              revealEditor("calendar");
+              revealEditor();
             }}
           />
           <ul className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]" aria-label="Availability legend">
             {LEGEND.map((tone) => (
               <li key={tone} className="flex items-center gap-1.5">
                 <span
-                  className={`h-2.5 w-2.5 rounded-full ${
-                    tone === "available" ? "bg-[#b7d7a8]" : tone === "limited" ? "bg-[#f3d56a]" : "bg-[#f4b7b8]"
+                  className={`legend-dot ${
+                    tone === "available" ? "day-dot--available" : tone === "limited" ? "day-dot--limited" : "day-dot--off"
                   }`}
                 />
                 {toneLabel(tone)}
@@ -316,82 +276,49 @@ export default function MyAvailabilityPage() {
             ))}
           </ul>
         </div>
-        <section ref={calendarEditorRef} className="card scroll-mt-4 p-4 shadow-none">
-        <h2 className="text-lg">{selected ? format(parseISO(selected), "EEEE, MMMM d") : "Select a day"}</h2>
-        {selected && selectedLocked ? (
-          <p className="mt-2 text-sm text-[var(--muted)]">This week was approved by your manager, so it&apos;s locked.</p>
-        ) : selected && editorSpot === "panel" ? (
-          <p className="mt-2 text-sm text-[var(--muted)]">Editing in the week section below.</p>
-        ) : selected ? (
-          <div className="mt-3">
-            <AvailabilityEditor
-              key={`${selected}-${selectedCell?.kind ?? "empty"}-${selectedCell?.note ?? ""}`}
-              cell={selectedCell}
-              saving={saving}
-              onSave={(cell) => void saveDay(cell)}
-              submitLabel="Confirm changes"
-            />
-          </div>
-        ) : (
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            Tap a day, then choose Available all day, Choose times, or Sign off.
-          </p>
-        )}
-        {error && editorSpot === "calendar" ? (
-          <p role="alert" className="mt-3 text-sm text-[var(--conflict)]">
-            {error}
-          </p>
-        ) : null}
+        <section ref={calendarEditorRef} className="card scroll-mt-4 p-4 shadow-none sm:p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Selected day</p>
+          <h2 className="mt-1 text-[1.65rem] leading-tight">{selected ? format(parseISO(selected), "EEEE, MMMM d") : "Select a day"}</h2>
+          {selected && selectedLocked ? (
+            <p className="mt-2 text-sm text-[var(--muted)]">This week was approved by your manager, so it&apos;s locked.</p>
+          ) : selected ? (
+            <div className="mt-3">
+              <AvailabilityEditor
+                key={`${selected}-${selectedCell?.kind ?? "empty"}-${selectedCell?.note ?? ""}`}
+                cell={selectedCell}
+                saving={saving}
+                onSave={(cell) => void saveDay(cell)}
+                commitOnSelect
+              />
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Tap a day, then choose Available all day, Limited hours, or Sign off.
+            </p>
+          )}
+          {error ? (
+            <p role="alert" className="mt-3 text-sm text-[var(--conflict)]">
+              {error}
+            </p>
+          ) : null}
+          {today && user ? (
+            <div className="mt-5 border-t border-[var(--border)] pt-4">
+              <WeekSubmitPanel
+                key={panelWeek}
+                presentation="actions"
+                weekStart={panelWeek}
+                week={weeks[panelWeek]}
+                employeeId={employeeId}
+                uid={user.uid}
+                name={employee?.displayName ?? user.displayName ?? user.email ?? "Staff"}
+                today={today}
+                request={mine.find((r) => r.weekStart === panelWeek) ?? null}
+                onChanged={reloadRequests}
+              />
+            </div>
+          ) : null}
         </section>
       </div>
-      {today && user ? (
-        <div className="mt-6">
-          <h2 className="text-lg">Send your week to your manager</h2>
-          <p className="mb-2 mt-1 text-sm text-[var(--muted)]">
-            Set your days above, then send the week for approval. Use the arrows at the top to pick another week.
-          </p>
-          <WeekSubmitPanel
-            key={panelWeek}
-            weekStart={panelWeek}
-            week={weeks[panelWeek]}
-            employeeId={employeeId}
-            uid={user.uid}
-            name={employee?.displayName ?? user.displayName ?? user.email ?? "Staff"}
-            today={today}
-            request={mine.find((r) => r.weekStart === panelWeek) ?? null}
-            onChanged={reloadRequests}
-            selectedDate={selected}
-            onSelectDay={(date) => {
-              setSelected(date);
-              setEditorSpot("panel");
-              setError(null);
-              revealEditor("panel");
-            }}
-            editor={
-              selected && editorSpot === "panel" && mondayKey(selected) === panelWeek ? (
-                <div ref={panelEditorRef} className="mt-4 scroll-mt-4 border-t border-[var(--border)] pt-4">
-                  <p className="font-serif text-base">{format(parseISO(selected), "EEEE, MMMM d")}</p>
-                  <div className="mt-3">
-                    <AvailabilityEditor
-                      key={`panel-${selected}-${selectedCell?.kind ?? "empty"}-${selectedCell?.note ?? ""}`}
-                      formId="availability-week-form"
-                      cell={selectedCell}
-                      saving={saving}
-                      onSave={(cell) => void saveDay(cell)}
-                      submitLabel="Confirm changes"
-                    />
-                  </div>
-                  {error ? (
-                    <p role="alert" className="mt-3 text-sm text-[var(--conflict)]">
-                      {error}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null
-            }
-          />
-        </div>
-      ) : null}
     </PageFrame>
   );
 }

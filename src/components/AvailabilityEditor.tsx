@@ -7,7 +7,7 @@ import { toneForCell, type AvailabilityTone } from "@/components/availabilityTon
 
 const CHOICES: Array<{ tone: Exclude<AvailabilityTone, "unclear" | "unset">; label: string }> = [
   { tone: "available", label: "Available all day" },
-  { tone: "limited", label: "Choose times" },
+  { tone: "limited", label: "Limited hours" },
   { tone: "off", label: "Sign off" },
 ];
 
@@ -31,12 +31,15 @@ export function AvailabilityEditor({
   onSave,
   formId = "availability-day-form",
   submitLabel = "Save day",
+  commitOnSelect = false,
 }: {
   cell?: AvailabilityCell | null;
   saving: boolean;
   onSave: (cell: AvailabilityCell) => void;
   formId?: string;
   submitLabel?: string;
+  /** Save as soon as a choice or time is picked. No separate confirm button. */
+  commitOnSelect?: boolean;
 }) {
   const initial = toneForCell(cell);
   const [tone, setTone] = useState<Exclude<AvailabilityTone, "unclear" | "unset">>(
@@ -46,29 +49,40 @@ export function AvailabilityEditor({
   const [end, setEnd] = useState(minutesToTime(cell?.window?.endMinutes ?? 18 * 60));
   const [error, setError] = useState<string | null>(null);
 
-  function save(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    if (tone === "available") {
-      onSave({ kind: "open", source: "manual", note: "Available" });
-      return;
-    }
-    if (tone === "off") {
-      onSave({ kind: "off", source: "manual", note: "Off" });
-      return;
-    }
-    const startMinutes = timeToMinutes(start);
-    const endMinutes = timeToMinutes(end);
+  function cellFor(
+    nextTone: Exclude<AvailabilityTone, "unclear" | "unset">,
+    nextStart: string,
+    nextEnd: string,
+  ): AvailabilityCell | null {
+    if (nextTone === "available") return { kind: "open", source: "manual", note: "Available" };
+    if (nextTone === "off") return { kind: "off", source: "manual", note: "Off" };
+    const startMinutes = timeToMinutes(nextStart);
+    const endMinutes = timeToMinutes(nextEnd);
     if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) {
       setError("End time needs to be after the start time.");
-      return;
+      return null;
     }
-    onSave({
+    return {
       kind: "window",
       source: "manual",
       window: { startMinutes, endMinutes },
       note: `${minutesToLabel(startMinutes)}–${minutesToLabel(endMinutes)}`,
-    });
+    };
+  }
+
+  function commit(
+    nextTone: Exclude<AvailabilityTone, "unclear" | "unset">,
+    nextStart = start,
+    nextEnd = end,
+  ) {
+    setError(null);
+    const next = cellFor(nextTone, nextStart, nextEnd);
+    if (next) onSave(next);
+  }
+
+  function save(event: FormEvent) {
+    event.preventDefault();
+    commit(tone);
   }
 
   return (
@@ -79,7 +93,10 @@ export function AvailabilityEditor({
             key={choice.tone}
             type="button"
             aria-pressed={tone === choice.tone}
-            onClick={() => setTone(choice.tone)}
+            onClick={() => {
+              setTone(choice.tone);
+              if (commitOnSelect) commit(choice.tone);
+            }}
             className={`min-h-12 rounded-2xl border-2 px-2 text-sm font-semibold ${
               tone === choice.tone
                 ? choice.tone === "available"
@@ -98,7 +115,14 @@ export function AvailabilityEditor({
         <div className="grid grid-cols-2 gap-3">
           <label>
             <span className="field-label">From</span>
-            <select className="input rounded-xl" value={start} onChange={(e) => setStart(e.target.value)}>
+            <select
+              className="input rounded-xl"
+              value={start}
+              onChange={(e) => {
+                setStart(e.target.value);
+                if (commitOnSelect) commit("limited", e.target.value, end);
+              }}
+            >
               {TIMES.map((mins) => (
                 <option key={mins} value={minutesToTime(mins)}>
                   {minutesToLabel(mins)}
@@ -108,7 +132,14 @@ export function AvailabilityEditor({
           </label>
           <label>
             <span className="field-label">Until</span>
-            <select className="input rounded-xl" value={end} onChange={(e) => setEnd(e.target.value)}>
+            <select
+              className="input rounded-xl"
+              value={end}
+              onChange={(e) => {
+                setEnd(e.target.value);
+                if (commitOnSelect) commit("limited", start, e.target.value);
+              }}
+            >
               {TIMES.map((mins) => (
                 <option key={mins} value={minutesToTime(mins)}>
                   {minutesToLabel(mins)}
@@ -123,9 +154,11 @@ export function AvailabilityEditor({
           {error}
         </p>
       ) : null}
-      <button type="submit" className="btn btn-primary h-12 w-full rounded-full text-base" disabled={saving}>
-        {saving ? "Saving…" : submitLabel}
-      </button>
+      {commitOnSelect ? null : (
+        <button type="submit" className="btn btn-primary h-12 w-full rounded-full text-base" disabled={saving}>
+          {saving ? "Saving…" : submitLabel}
+        </button>
+      )}
     </form>
   );
 }

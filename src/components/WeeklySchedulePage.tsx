@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addDays, format, parseISO } from "date-fns";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, IceCreamCone, Pencil, Plus, Printer } from "lucide-react";
-import { CompactWeekGrid, buildGridRows, staffOnDate } from "@/components/CompactWeekGrid";
+import { ChevronLeft, ChevronRight, Printer } from "lucide-react";
+import { CompactWeekGrid, buildGridRows } from "@/components/CompactWeekGrid";
 import { CoverageCheck } from "@/components/CoverageCheck";
 import { PageFrame } from "@/components/PageFrame";
 import { ScheduleCopyPaste } from "@/components/ScheduleCopyPaste";
 import { ScheduleExportButtons } from "@/components/ScheduleExportButtons";
-import { ShiftCoverageRecap } from "@/components/ShiftCoverageRecap";
+import { coverageGapSummaries } from "@/components/ShiftCoverageRecap";
 import { ShiftScheduleDialog } from "@/components/ShiftScheduleDialog";
 import type { Employee, Shift, StaffingIntervalTarget, WeekSchedule } from "@/lib/types";
 import { apiFetch } from "@/lib/api/client";
@@ -21,34 +21,16 @@ import { useAuth } from "@/components/AuthProvider";
 import {
   availabilityCellFor,
   cellDetail,
-  shiftAvailabilityConflict,
   toneForCell,
   toneLabel,
 } from "@/components/availabilityTone";
-import { formatShiftTimes, formatWeekRange, intervalsOverlap, newId, shiftDurationHours, weekDates } from "@/lib/time";
+import { formatWeekRange, newId, weekDates } from "@/lib/time";
 
 type Bootstrap = {
   employees: Employee[];
   week: WeekSchedule;
   staffingTargets: StaffingIntervalTarget[];
 };
-
-/** Reference staffing for Main store floor shifts — shown for context only, never enforced. */
-const PERIODS = [
-  { label: "Morning", start: 9 * 60, end: 12 * 60, usual: null },
-  { label: "Afternoon", start: 12 * 60, end: 18 * 60, usual: [2, 3] as const },
-  { label: "Evening", start: 18 * 60, end: 22 * 60, usual: [4, 5] as const },
-];
-
-function hoursLabel(hours: number): string {
-  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
-}
-
-function shiftStyle(shift: Shift): { bar: string; bg: string; place: string } {
-  if (shift.department === "ic") return { bar: "#8fb0e0", bg: "#e3ecf9", place: "Ice cream" };
-  if (shift.location === "lehigh") return { bar: "#e0b93a", bg: "#fbf1c4", place: "Lehigh" };
-  return { bar: "#7fbf7b", bg: "#e6f2df", place: "Main store" };
-}
 
 export function WeeklySchedulePage() {
   const { rosterVersion, schedulerVersion } = useAuth();
@@ -211,45 +193,6 @@ export function WeeklySchedulePage() {
     [names]
   );
 
-  const dayShifts = useMemo(
-    () =>
-      shifts
-        .filter((shift) => shift.date === activeDay)
-        .sort(
-          (a, b) =>
-            (a.startMinutes ?? -1) - (b.startMinutes ?? -1) ||
-            nameOf(a).localeCompare(nameOf(b))
-        ),
-    [shifts, activeDay, nameOf]
-  );
-
-  const weekHours = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const shift of shifts) {
-      if (!shift.employeeId) continue;
-      totals.set(shift.employeeId, (totals.get(shift.employeeId) ?? 0) + shiftDurationHours(shift.startMinutes, shift.endMinutes));
-    }
-    return [...totals.entries()]
-      .map(([id, hours]) => ({ id, name: names.get(id) ?? id, hours }))
-      .sort((a, b) => b.hours - a.hours || a.name.localeCompare(b.name));
-  }, [shifts, names]);
-
-  /** Distinct people on the floor at the Main store during a period, plus Lehigh / IC totals. */
-  function staffing(period: (typeof PERIODS)[number]) {
-    const ids = new Set<string>();
-    for (const shift of dayShifts) {
-      if (shift.department !== "floor" || shift.location === "lehigh") continue;
-      if (shift.startMinutes == null || shift.endMinutes == null) continue;
-      if (!intervalsOverlap(shift.startMinutes, shift.endMinutes, period.start, period.end)) continue;
-      ids.add(shift.employeeId ?? `label:${shift.unresolvedLabel ?? ""}`);
-    }
-    return ids.size;
-  }
-  const lehighToday = new Set(
-    dayShifts.filter((s) => s.location === "lehigh" && s.department === "floor").map((s) => s.employeeId ?? s.unresolvedLabel)
-  ).size;
-  const icToday = new Set(dayShifts.filter((s) => s.department === "ic").map((s) => s.employeeId ?? s.unresolvedLabel)).size;
-
   const availability = data?.week.availability;
   function availabilityNote(employeeId: string | null, date: string): string {
     const cell = availabilityCellFor(availability, employeeId, date);
@@ -263,22 +206,6 @@ export function WeeklySchedulePage() {
     const day = format(parseISO(date), "EEEE, MMM d");
     return note ? `${day} · ${note}` : day;
   }
-  const unavailableToday = activeDay
-    ? roster.flatMap((employee) => {
-        const cell = availabilityCellFor(availability, employee.id, activeDay);
-        const tone = toneForCell(cell);
-        if (tone !== "off" && tone !== "limited") return [];
-        return [{ id: employee.id, name: names.get(employee.id) ?? employee.displayName, tone, detail: cellDetail(cell) }];
-      })
-    : [];
-
-  function openAdd(kind: "shift" | "ic") {
-    if (!addEmployeeId || !activeDay) return;
-    setEditing(null);
-    setDraftText(kind === "ic" ? "IC" : "");
-    setAdding(true);
-  }
-
   if (!weekStart) {
     return (
       <PageFrame>
@@ -293,26 +220,25 @@ export function WeeklySchedulePage() {
     <PageFrame>
       <div className="flex items-end justify-between gap-2">
         <div className="min-w-0">
-          <h1 className="text-[1.75rem] leading-none sm:text-[2rem]">
-            {isPosted ? "Published schedule" : "Draft schedule"}
+          <h1 className="flex flex-wrap items-center gap-2 text-[1.85rem] leading-none sm:text-[2rem]">
+            Weekly schedule
+            <span className={isPosted ? "tag tag-published" : "tag tag-draft"}>{isPosted ? "Published" : "Draft"}</span>
           </h1>
-          <p className="mt-1 text-sm font-semibold">{formatWeekRange(weekStart)}</p>
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            Step 3 of 3 · You choose who works. Tap a box to add or change a shift, then publish.
-          </p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Assign shifts and locations. Review coverage before publishing.</p>
         </div>
-        <div className="flex shrink-0 gap-1 pb-1">
+        <div className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] p-1">
           <button
             type="button"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--surface)]"
+            className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-[var(--surface-2)]"
             aria-label="Previous week"
             onClick={() => setWeekStart(format(addDays(parseISO(weekStart), -7), "yyyy-MM-dd"))}
           >
             <ChevronLeft size={18} />
           </button>
+          <span className="px-1 text-sm font-semibold">{formatWeekRange(weekStart)}</span>
           <button
             type="button"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--surface)]"
+            className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-[var(--surface-2)]"
             aria-label="Next week"
             onClick={() => setWeekStart(format(addDays(parseISO(weekStart), 7), "yyyy-MM-dd"))}
           >
@@ -345,8 +271,7 @@ export function WeeklySchedulePage() {
             </p>
           ) : null}
 
-          <div className="mt-3 lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start lg:gap-5">
-            {/* Whole week at a glance */}
+          <div className="mt-4">
             <div className="min-w-0">
               <CompactWeekGrid
                 dates={dates}
@@ -354,6 +279,7 @@ export function WeeklySchedulePage() {
                 shifts={shifts}
                 availability={data.week.availability}
                 selectedDate={activeDay}
+                density="desk"
                 onDay={setDay}
                 onCell={(rowId, date, cellShifts) => {
                   setDay(date);
@@ -372,221 +298,64 @@ export function WeeklySchedulePage() {
                   }
                 }}
               />
-              <ul className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]" aria-label="Shift legend">
+              <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted)]" aria-label="Shift legend">
                 <li className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#b7d7a8]" /> Main store
+                  <span className="legend-dot shift-pill--linden" /> Linden
                 </li>
                 <li className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#f3d56a]" /> Lehigh (L)
+                  <span className="legend-dot shift-pill--lehigh" /> Lehigh
                 </li>
                 <li className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#d7e4f8]" /> Ice cream (IC)
+                  <span className="legend-dot shift-pill--ic" /> Ice cream
                 </li>
                 <li className="flex items-center gap-1.5">
-                  <span className="font-semibold text-[#b0545c]">Off</span> / <span className="font-semibold text-[#9a7a20]">1–6</span>{" "}
-                  from Availability
-                </li>
-                <li className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full ring-2 ring-inset ring-[var(--conflict)]" /> Clashes with availability
+                  <span className="legend-dot ring-2 ring-inset ring-[var(--conflict)]" /> Clashes with availability
                 </li>
               </ul>
               {weekTotalShifts === 0 ? (
                 <p className="mt-3 rounded-2xl bg-[var(--surface)] px-3 py-3 text-sm text-[var(--muted)]">
-                  Nothing scheduled yet. Tap a <span className="font-semibold">+</span> to give someone a shift.
+                  Nothing scheduled yet. Select an empty day to give someone a shift.
                 </p>
               ) : null}
+              <div className="mt-4 flex flex-col gap-3 border-t border-[var(--border)] pt-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Coverage summary</p>
+                  {(() => {
+                    const lines = coverageGapSummaries(data.week, data.employees, data.staffingTargets);
+                    const shortDays = new Set(lines.map((line) => line.split(" · ")[0])).size;
+                    return (
+                      <p className={`mt-1 text-sm ${shortDays > 0 ? "font-semibold text-[var(--signoff-fg)]" : ""}`}>
+                        {shortDays === 0
+                          ? weekTotalShifts === 0
+                            ? "No shifts yet"
+                            : "No gaps against the usual targets."
+                          : `${shortDays} ${shortDays === 1 ? "day is" : "days are"} short`}
+                      </p>
+                    );
+                  })()}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ScheduleCopyPaste weekStart={weekStart} week={data.week} onApplied={() => void loadWeek(weekStart)} />
+                  <Link href={`/print/${weekStart}`} className="btn btn-ghost h-11">
+                    <Printer size={15} />
+                    Print / PDF
+                  </Link>
+                  <button type="button" className="btn btn-primary h-11 px-5" disabled={approving} onClick={() => void approve(false)}>
+                    {approving ? "Publishing…" : isPosted ? "Publish changes" : "Approve & publish"}
+                  </button>
+                </div>
+              </div>
+              <div className="mt-2">
+                <ScheduleExportButtons week={data.week} employees={data.employees} variant="link" />
+              </div>
             </div>
 
-            {/* Selected day */}
-            <section className="mt-4 min-w-0 lg:mt-0" aria-label="Selected day">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-lg leading-tight">{format(parseISO(activeDay), "EEEE, MMMM d")}</h2>
-                <span className="shrink-0 rounded-full bg-[var(--surface)] px-2.5 py-1 text-xs font-semibold">
-                  {staffOnDate(shifts, activeDay)} working
-                </span>
-              </div>
-
-              {dayShifts.length === 0 ? (
-                <p className="mt-2 rounded-2xl bg-[var(--surface)] px-3 py-4 text-sm text-[var(--muted)]">No shifts on this day yet.</p>
-              ) : (
-                <ul className="mt-2 space-y-1.5">
-                  {dayShifts.map((shift) => {
-                    const style = shiftStyle(shift);
-                    const hours = shiftDurationHours(shift.startMinutes, shift.endMinutes);
-                    const clash = shiftAvailabilityConflict(
-                      availabilityCellFor(availability, shift.employeeId, shift.date),
-                      shift
-                    );
-                    return (
-                      <li
-                        key={shift.id}
-                        className="flex items-center gap-3 rounded-xl py-2 pl-3 pr-2"
-                        style={{ background: style.bg, borderLeft: `4px solid ${style.bar}` }}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold">{nameOf(shift)}</p>
-                          <p className="text-xs text-[var(--muted)]">
-                            {shift.department === "ic" && shift.startMinutes == null
-                              ? "Ice cream"
-                              : `${formatShiftTimes(shift.startMinutes, shift.endMinutes)} · ${style.place}`}
-                          </p>
-                          {clash ? (
-                            <p className="text-xs font-semibold text-[var(--conflict)]">{clash}</p>
-                          ) : null}
-                        </div>
-                        {hours > 0 ? <span className="shrink-0 text-xs font-semibold tabular-nums">{hoursLabel(hours)}</span> : null}
-                        <button
-                          type="button"
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70"
-                          aria-label={`Edit ${nameOf(shift)}'s shift`}
-                          onClick={() => {
-                            setAdding(false);
-                            setEditing(shift);
-                          }}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-
-              {unavailableToday.length > 0 ? (
-                <ul className="mt-2 space-y-1 text-xs" aria-label="Availability today">
-                  {unavailableToday.map((person) => (
-                    <li key={person.id} className="flex items-center gap-2">
-                      <span
-                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${person.tone === "off" ? "bg-[#f4b7b8]" : "bg-[#f3d56a]"}`}
-                        aria-hidden
-                      />
-                      <span className="font-semibold">{person.name}</span>
-                      <span className="text-[var(--muted)]">
-                        {person.tone === "off" ? "off today" : `limited · ${person.detail}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <select
-                  className="input col-span-2 min-w-0 rounded-full"
-                  aria-label="Employee to add"
-                  value={addEmployeeId}
-                  onChange={(event) => setAddEmployeeId(event.target.value)}
-                >
-                  <option value="">Choose employee…</option>
-                  {roster.map((employee) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.displayName}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn btn-ghost h-11 rounded-full"
-                  disabled={!addEmployeeId}
-                  onClick={() => openAdd("shift")}
-                >
-                  <Plus size={14} /> Add shift
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost h-11 rounded-full"
-                  disabled={!addEmployeeId}
-                  onClick={() => openAdd("ic")}
-                >
-                  <IceCreamCone size={14} /> Add IC
-                </button>
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <div className="rounded-2xl bg-[var(--surface)] p-3">
-                  <p className="text-xs font-bold">Staffing today</p>
-                  <ul className="mt-1.5 space-y-1 text-xs">
-                    {PERIODS.map((period) => {
-                      const count = staffing(period);
-                      const below = period.usual != null && count > 0 && count < period.usual[0];
-                      return (
-                        <li key={period.label} className="flex items-baseline justify-between gap-1">
-                          <span>{period.label}</span>
-                          <span className="text-right tabular-nums">
-                            <span className={`font-bold ${below ? "text-[#9a6a20]" : ""}`}>{count}</span>
-                            {period.usual ? (
-                              <span className="ml-1 text-[10px] text-[var(--muted)]">
-                                usual {period.usual[0]}–{period.usual[1]}
-                              </span>
-                            ) : null}
-                          </span>
-                        </li>
-                      );
-                    })}
-                    <li className="flex items-baseline justify-between gap-1 border-t border-[var(--border)] pt-1">
-                      <span>Lehigh</span>
-                      <span className="font-bold tabular-nums">{lehighToday}</span>
-                    </li>
-                    <li className="flex items-baseline justify-between gap-1">
-                      <span>Ice cream</span>
-                      <span className="font-bold tabular-nums">{icToday}</span>
-                    </li>
-                  </ul>
-                </div>
-                <div className="rounded-2xl bg-[var(--surface)] p-3">
-                  <p className="text-xs font-bold">Hours this week</p>
-                  {weekHours.length === 0 ? (
-                    <p className="mt-1.5 text-xs text-[var(--muted)]">No hours yet.</p>
-                  ) : (
-                    <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto text-xs">
-                      {weekHours.map((row) => (
-                        <li key={row.id} className="flex items-baseline justify-between gap-2">
-                          <span className="truncate">{row.name}</span>
-                          <span className="shrink-0 font-bold tabular-nums">{hoursLabel(row.hours)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <ScheduleCopyPaste
-              appearance="link"
-              weekStart={weekStart}
+            <CoverageCheck
               week={data.week}
-              onApplied={() => void loadWeek(weekStart)}
+              employees={data.employees}
+              targets={data.staffingTargets}
             />
           </div>
-          <button
-            type="button"
-            className="btn btn-primary mt-3 h-12 w-full rounded-full md:w-auto md:min-w-64"
-            disabled={approving}
-            onClick={() => void approve(false)}
-          >
-            {approving ? "Publishing…" : isPosted ? "Publish changes" : "Approve & publish"}
-          </button>
-          <div className="mt-3 flex flex-wrap items-center justify-center gap-4">
-            <Link
-              href={`/print/${weekStart}`}
-              className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--muted)]"
-            >
-              <Printer size={14} />
-              Print / PDF
-            </Link>
-            <ScheduleExportButtons week={data.week} employees={data.employees} variant="link" />
-          </div>
-          <details className="mt-4">
-            <summary className="cursor-pointer text-sm font-semibold text-[var(--muted)]">Whole-week coverage recap</summary>
-            <ShiftCoverageRecap week={data.week} employees={data.employees} targets={data.staffingTargets} />
-          </details>
-          <details className="mt-3">
-            <summary className="cursor-pointer text-sm font-semibold text-[var(--muted)]">
-              Detailed coverage vs. staffing targets
-            </summary>
-            <CoverageCheck week={data.week} employees={data.employees} targets={data.staffingTargets} />
-          </details>
         </>
       )}
       {editing ? (
