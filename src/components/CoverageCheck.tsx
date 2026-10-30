@@ -18,7 +18,7 @@ type Band = {
 };
 
 function toneFor(row: CoverageIntervalResult): Tone | null {
-  if (row.status === "below_minimum") return "short";
+  if (row.status === "below_minimum" || row.status === "unstaffed_open") return "short";
   if (row.status === "excess") return "over";
   if (row.status === "minimum_met" && row.desired > row.minimum && row.count < row.desired) return "thin";
   if (row.status === "minimum_met" || row.status === "desired_met") return "ok";
@@ -74,16 +74,23 @@ function needFor(band: Band): number {
 }
 
 function barColor(tone: Tone): string {
-  if (tone === "ok") return "#7d9a86";
-  if (tone === "thin") return "#e0a04a";
+  if (tone === "ok") return "#2f6b4f";
+  if (tone === "thin") return "#e0941a";
   if (tone === "over") return "#8d6a4a";
-  return "#d4896a";
+  return "#e07a3a";
 }
 
 function countColor(tone: Tone): string {
-  if (tone === "ok") return "var(--muted)";
-  if (tone === "thin" || tone === "over") return "#6d5310";
-  return "#8d3d45";
+  if (tone === "ok") return "#2f6b4f";
+  if (tone === "thin" || tone === "over") return "#8a5a12";
+  return "#c0562a";
+}
+
+function staffLabel(band: Band): string {
+  if (band.tone === "ok" && band.desired > band.minimum) return `${band.minimum}–${band.desired} staff`;
+  if (band.tone === "ok") return `${band.count} staff`;
+  if (band.count === 0) return `needs ${Math.max(band.minimum, band.desired, 1)}`;
+  return `${band.count} staff`;
 }
 
 function locName(loc: string): string {
@@ -100,9 +107,6 @@ export function CoverageCheck({
   targets: StaffingIntervalTarget[];
 }) {
   const dates = weekDates(week.weekStart);
-  const saved = week.shifts.some(
-    (shift) => shift.department === "floor" && shift.startMinutes != null && shift.endMinutes != null
-  );
   const coverage =
     week.coverage.length > 0
       ? week.coverage
@@ -123,56 +127,52 @@ export function CoverageCheck({
     return { date, locations, clear };
   });
   const clearDays = days.filter((day) => day.clear).length;
-  const summary = !saved ? "Nothing saved yet" : `${clearDays} of ${dates.length} clear`;
+  const hasBands = days.some((day) => day.locations.some((location) => location.bands.length > 0));
 
   return (
-    <section className="card mt-4 p-4 shadow-none" aria-label="Coverage">
+    <section className="card mt-4 p-5 shadow-none" aria-label="Coverage check">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-lg">Coverage</h2>
-        <p
-          className={`text-sm font-semibold ${
-            !saved ? "text-[var(--muted)]" : clearDays === dates.length ? "text-[#2f6b4f]" : "text-[#8d3d45]"
-          }`}
-        >
-          {summary}
+        <h2 className="text-xl">Coverage check</h2>
+        <p className={`text-base font-semibold ${clearDays === dates.length && hasBands ? "text-[#2f6b4f]" : "text-[#c0562a]"}`}>
+          {hasBands ? `${clearDays} of ${dates.length} clear` : "No targets yet"}
         </p>
       </div>
-      <ul className="mt-3 grid gap-4 sm:grid-cols-2">
+      <ul className="mt-4 grid gap-3 lg:grid-cols-2">
         {days.map((day) => (
-          <li key={day.date}>
-            <p className="text-sm font-semibold">{format(parseISO(day.date), "EEEE")}</p>
-            {day.locations.map((location) => (
-              <div key={location.location} className="mt-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">{location.name}</p>
-                {location.bands.length === 0 ? (
-                  <p className="mt-1 text-xs text-[var(--muted)]">No target</p>
-                ) : (
-                  <ul className="mt-1 space-y-1.5">
-                    {location.bands.map((band) => {
-                      const need = needFor(band);
-                      const width = Math.min(100, Math.round((band.count / need) * 100));
-                      return (
-                        <li
-                          key={`${band.start}-${band.end}`}
-                          className="grid grid-cols-[4rem_1fr_auto] items-center gap-2"
-                        >
-                          <span className="text-sm font-medium">{bandLabel(band.start, band.end)}</span>
-                          <span className="h-1.5 overflow-hidden rounded-full bg-[#efe6d8]">
-                            <span
-                              className="block h-full rounded-full"
-                              style={{ width: `${width}%`, background: barColor(band.tone) }}
-                            />
-                          </span>
-                          <span className="text-xs font-semibold tabular-nums" style={{ color: countColor(band.tone) }}>
-                            {band.count}/{need}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
+          <li key={day.date} className="rounded-2xl bg-[var(--surface)] px-4 py-3.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-base font-semibold">
+                {format(parseISO(day.date), "EEEE")}
+                <span className="ml-2 text-sm font-normal text-[var(--muted)]">{format(parseISO(day.date), "MMM d")}</span>
+              </p>
+              <p className={`text-sm font-semibold ${day.clear ? "text-[#2f6b4f]" : "text-[#c0562a]"}`}>
+                {day.clear ? "Clear" : "Short"}
+              </p>
+            </div>
+            {day.locations.every((location) => location.bands.length === 0) ? (
+              <p className="mt-3 text-sm text-[var(--muted)]">No target</p>
+            ) : (
+              <ul className="mt-3 space-y-2.5">
+                {day.locations.flatMap((location) =>
+                  location.bands.map((band) => {
+                    const need = needFor(band);
+                    const width = Math.min(100, Math.round((band.count / need) * 100));
+                    const label = location.location === "lehigh" ? `Lehigh ${bandLabel(band.start, band.end)}` : bandLabel(band.start, band.end);
+                    return (
+                      <li key={`${location.location}-${band.start}-${band.end}`} className="grid grid-cols-[6.75rem_1fr_6.25rem] items-center gap-3">
+                        <span className="text-sm font-semibold tabular-nums">{label}</span>
+                        <span className="h-3 overflow-hidden rounded-full bg-[#e6e0d6]">
+                          <span className="block h-full rounded-full" style={{ width: `${width}%`, background: barColor(band.tone) }} />
+                        </span>
+                        <span className="text-right text-sm font-semibold tabular-nums" style={{ color: countColor(band.tone) }}>
+                          {staffLabel(band)}
+                        </span>
+                      </li>
+                    );
+                  }),
                 )}
-              </div>
-            ))}
+              </ul>
+            )}
           </li>
         ))}
       </ul>
