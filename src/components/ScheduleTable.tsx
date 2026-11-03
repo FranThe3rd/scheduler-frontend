@@ -1,5 +1,10 @@
+"use client";
+
+import { useRef } from "react";
+import { format, parseISO } from "date-fns";
 import type { Employee, Shift, WeekSchedule } from "@/lib/types";
 import { buildScheduleTableMatrix } from "@/lib/scheduleGridTable";
+import { WaffleScrollCover } from "@/components/WaffleScrollCover";
 
 export function ScheduleTable({
   week,
@@ -12,21 +17,33 @@ export function ScheduleTable({
   shifts?: Shift[];
   className?: string;
 }) {
-  const { headers, body } = buildScheduleTableMatrix(week, employees, shifts);
+  const headRef = useRef<HTMLTableSectionElement>(null);
+  const { headers, body, dates } = buildScheduleTableMatrix(week, employees, shifts);
 
   return (
     <table
-      className={`w-full border-collapse text-sm ${className}`}
+      className={`sched-matrix w-full border-collapse text-sm ${className}`}
       aria-label="Weekly schedule table"
     >
-      <thead>
+      <WaffleScrollCover anchorRef={headRef} />
+      <thead ref={headRef}>
         <tr className="bg-[var(--surface-2)]">
-          {headers.map((h) => (
+          {headers.map((h, i) => (
             <th
               key={h}
               className="border border-[var(--border)] px-2 py-2 text-left text-xs font-semibold"
             >
-              {h}
+              {i === 0 ? (
+                h
+              ) : (
+                <>
+                  <span className="sched-matrix-long">{h}</span>
+                  <span className="sched-matrix-short">
+                    <span className="block">{format(parseISO(dates[i - 1]!), "EEEEE")}</span>
+                    <span className="block font-normal">{format(parseISO(dates[i - 1]!), "d")}</span>
+                  </span>
+                </>
+              )}
             </th>
           ))}
         </tr>
@@ -37,6 +54,7 @@ export function ScheduleTable({
             {row.map((cell, ci) => (
               <td
                 key={ci}
+                title={ci === 0 ? cell : undefined}
                 className={`border border-[var(--border)] px-2 py-2 align-top text-center ${
                   ci === 0 ? "text-left font-semibold" : ""
                 } ${cell === "—" ? "text-[var(--muted)]" : ""} ${

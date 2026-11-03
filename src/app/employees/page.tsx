@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthProvider";
 import { useAdminRequests } from "@/components/useScheduleRequests";
@@ -10,9 +11,28 @@ import { apiFetch } from "@/lib/api/client";
 import { mergeTeamSchedule } from "@/lib/mergeTeamSchedule";
 import { deleteRequestsForUser, requestErrorMessage } from "@/lib/scheduleRequests";
 import { shiftToCellText } from "@/lib/shiftCellText";
-import { dayOfWeekFromDate, formatWeekRange, thisWeekMondayNy, weekDates } from "@/lib/time";
+import { dayOfWeekFromDate, formatWeekRange, shiftDurationHours, thisWeekMondayNy, weekDates } from "@/lib/time";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const SHORT_DAYS = ["M", "T", "W", "Th", "F", "Sa", "Su"];
+
+type WeekStat = { shifts: number; hours: number; days: boolean[] };
+
+function emptyStat(): WeekStat {
+  return { shifts: 0, hours: 0, days: [false, false, false, false, false, false, false] };
+}
+
+function hoursLabel(hours: number): string {
+  const rounded = Math.round(hours * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}h` : `${rounded.toFixed(1)}h`;
+}
+
+function weekSummary(stat: WeekStat | undefined, ready: boolean): string {
+  if (!ready || !stat) return "Loading this week…";
+  if (stat.shifts === 0) return "No shifts";
+  const count = `${stat.shifts} shift${stat.shifts === 1 ? "" : "s"}`;
+  return stat.hours > 0 ? `${count} · ${hoursLabel(stat.hours)}` : count;
+}
 
 export default function EmployeesPage() {
   const { rosterVersion, schedulerVersion } = useAuth();
@@ -23,6 +43,7 @@ export default function EmployeesPage() {
   const [weekStart, setWeekStart] = useState(thisWeekMondayNy);
   const [week, setWeek] = useState<WeekSchedule | null>(null);
   const [adding, setAdding] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newPrintedLabel, setNewPrintedLabel] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -47,6 +68,23 @@ export default function EmployeesPage() {
         approvedRequests: (requests ?? []).filter((request) => request.weekStart === weekStart),
       }).week
     : null;
+  const weekStats = useMemo(() => {
+    const stats = new Map<string, WeekStat>();
+    for (const employee of employees) stats.set(employee.id, emptyStat());
+    if (!mergedWeek) return stats;
+    const dates = weekDates(mergedWeek.weekStart);
+    for (const shift of mergedWeek.shifts) {
+      if (!shift.employeeId) continue;
+      const stat = stats.get(shift.employeeId);
+      if (!stat) continue;
+      stat.shifts += 1;
+      stat.hours += shiftDurationHours(shift.startMinutes, shift.endMinutes);
+      const index = dates.indexOf(shift.date);
+      if (index >= 0) stat.days[index] = true;
+    }
+    return stats;
+  }, [employees, mergedWeek]);
+
   const selectedShifts = useMemo(() => {
     if (!selected || !mergedWeek) return [];
     const dates = weekDates(mergedWeek.weekStart);
@@ -87,6 +125,7 @@ export default function EmployeesPage() {
     const json = await res.json();
     if (res.ok && json.employee) {
       setEmployees((prev) => [...prev, json.employee]);
+      setAddOpen(false);
       setSelected(json.employee);
       setNewDisplayName("");
       setNewPrintedLabel("");
@@ -140,82 +179,172 @@ export default function EmployeesPage() {
     return shiftToCellText(shift);
   }
 
+  function closePanel() {
+    setSelected(null);
+    setAddOpen(false);
+    setDeleteError(null);
+  }
+
+  function openEmployee(employee: Employee) {
+    setAddOpen(false);
+    setDeleteError(null);
+    setSelected(structuredClone(employee));
+  }
+
+  useEffect(() => {
+    if (!selected && !addOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSelected(null);
+        setAddOpen(false);
+        setDeleteError(null);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected, addOpen]);
+
   return (
     <div className="flex h-dvh flex-col pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-0">
       <AppHeader />
       <WeekToolbar weekStart={weekStart} onChangeWeek={setWeekStart} />
 
-      <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3 sm:px-4">
-        <div className="mr-2">
-          <h1 className="text-base font-semibold">Employees</h1>
-          <p className="text-xs text-[var(--muted)]">
-            Names shown on the weekly schedule grid.
-          </p>
+      <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-[1.85rem] leading-none sm:text-[2rem]">Employees</h1>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Names on the weekly schedule. Each card is this week.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setSelected(null);
+              setDeleteError(null);
+              setAddOpen(true);
+            }}
+          >
+            Add employee
+          </button>
         </div>
-        <label className="w-full sm:w-48">
-          <span className="field-label">Display name</span>
-          <input
-            className="input"
-            value={newDisplayName}
-            placeholder="Jordan Smith"
-            onChange={(e) => setNewDisplayName(e.target.value)}
-          />
-        </label>
-        <label className="w-full sm:w-48">
-          <span className="field-label">Printed on schedule (optional)</span>
-          <input
-            className="input"
-            value={newPrintedLabel}
-            placeholder="J. Smith"
-            onChange={(e) => setNewPrintedLabel(e.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="btn btn-primary w-full sm:w-auto"
-          disabled={adding || !newDisplayName.trim()}
-          onClick={() => void addEmployee()}
-        >
-          {adding ? "Adding…" : "Add employee"}
-        </button>
-      </div>
 
-      <main className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <ul
-          className="max-h-60 shrink-0 overflow-y-auto border-b border-[var(--border)] bg-[var(--surface)] md:max-h-none md:w-72 md:border-b-0 md:border-r"
-          aria-label="Employees"
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" aria-label="Employees">
+          {employees.map((employee) => {
+            const stat = weekStats.get(employee.id);
+            const summary = weekSummary(stat, Boolean(mergedWeek));
+            return (
+              <li key={employee.id}>
+                <button
+                  type="button"
+                  className={`card flex h-full w-full cursor-pointer flex-col px-3 py-3 text-left font-sans text-inherit transition-colors hover:bg-[var(--surface-2)] ${
+                    employee.status !== "active" ? "opacity-70" : ""
+                  }`}
+                  aria-current={selected?.id === employee.id ? "true" : undefined}
+                  aria-label={`${employee.displayName}, printed as ${employee.printedLabel}, ${summary}${
+                    employee.status !== "active" ? ", inactive" : ""
+                  }`}
+                  onClick={() => openEmployee(employee)}
+                >
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold">{employee.displayName}</span>
+                      <span className="block truncate text-xs text-[var(--muted)]">{employee.printedLabel}</span>
+                    </span>
+                    {employee.status !== "active" ? <span className="tag shrink-0">Inactive</span> : null}
+                  </span>
+                  <span className="mt-2 text-sm font-semibold">{summary}</span>
+                  <span className="mt-3 grid grid-cols-7 gap-1" aria-hidden>
+                    {SHORT_DAYS.map((label, index) => (
+                      <span key={label} className="flex flex-col items-center gap-1">
+                        <span className="text-[10px] font-semibold leading-none text-[var(--muted)]">{label}</span>
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            stat?.days[index]
+                              ? "bg-[var(--chrome)]"
+                              : "bg-transparent ring-1 ring-[var(--border-strong)]"
+                          }`}
+                        />
+                      </span>
+                    ))}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </main>
+
+      {addOpen || selected ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-3 sm:items-center sm:p-6"
+          onClick={closePanel}
+          role="presentation"
         >
-          {employees.map((e) => (
-            <li key={e.id} className="border-b border-[var(--grid-line)]">
+          <div
+            className="card flex max-h-[min(92dvh,40rem)] w-full max-w-lg flex-col overflow-hidden shadow-lg"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="employee-panel-title"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
+              <div className="min-w-0">
+                <h2 id="employee-panel-title" className="text-lg leading-tight">
+                  {addOpen ? "Add employee" : selected?.displayName}
+                </h2>
+                <p className="text-xs text-[var(--muted)]">
+                  {addOpen
+                    ? "Shown on the weekly schedule grid."
+                    : week
+                      ? formatWeekRange(week.weekStart)
+                      : "Loading this week…"}
+                </p>
+              </div>
               <button
                 type="button"
-                className={`flex w-full items-center gap-2 border-l-[3px] px-3 py-1.5 text-left transition-colors hover:bg-[var(--surface-2)] ${
-                  selected?.id === e.id
-                    ? "border-[var(--accent)] bg-[var(--accent-bg)]"
-                    : "border-transparent"
-                }`}
-                aria-current={selected?.id === e.id ? "true" : undefined}
-                onClick={() => setSelected(structuredClone(e))}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-[var(--surface)]"
+                aria-label="Close"
+                onClick={closePanel}
               >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">{e.displayName}</span>
-                  <span className="block truncate text-xs text-[var(--muted)]">
-                    {e.printedLabel}
-                  </span>
-                </span>
-                {e.status !== "active" ? <span className="tag">Inactive</span> : null}
+                <X size={18} />
               </button>
-            </li>
-          ))}
-        </ul>
+            </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
-          {selected ? (
-            <div className="max-w-3xl space-y-4">
-              <section className="card">
-                <div className="border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-2">
-                  <h2 className="text-[15px] font-semibold">{selected.displayName}</h2>
-                </div>
+            {addOpen ? (
+              <form
+                className="space-y-3 overflow-y-auto p-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void addEmployee();
+                }}
+              >
+                <label>
+                  <span className="field-label">Display name</span>
+                  <input
+                    className="input"
+                    value={newDisplayName}
+                    placeholder="Jordan Smith"
+                    autoFocus
+                    onChange={(event) => setNewDisplayName(event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span className="field-label">Printed on schedule (optional)</span>
+                  <input
+                    className="input"
+                    value={newPrintedLabel}
+                    placeholder="J. Smith"
+                    onChange={(event) => setNewPrintedLabel(event.target.value)}
+                  />
+                </label>
+                <button type="submit" className="btn btn-primary" disabled={adding || !newDisplayName.trim()}>
+                  {adding ? "Adding…" : "Add employee"}
+                </button>
+              </form>
+            ) : selected ? (
+              <div className="min-h-0 overflow-y-auto">
                 <div className="space-y-3 p-4">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label>
@@ -223,7 +352,8 @@ export default function EmployeesPage() {
                       <input
                         className="input"
                         value={selected.displayName}
-                        onChange={(e) => setSelected({ ...selected, displayName: e.target.value })}
+                        autoFocus
+                        onChange={(event) => setSelected({ ...selected, displayName: event.target.value })}
                       />
                     </label>
                     <label>
@@ -231,9 +361,7 @@ export default function EmployeesPage() {
                       <input
                         className="input"
                         value={selected.printedLabel}
-                        onChange={(e) =>
-                          setSelected({ ...selected, printedLabel: e.target.value })
-                        }
+                        onChange={(event) => setSelected({ ...selected, printedLabel: event.target.value })}
                       />
                     </label>
                   </div>
@@ -242,10 +370,10 @@ export default function EmployeesPage() {
                     <input
                       type="checkbox"
                       checked={selected.status === "active"}
-                      onChange={(e) =>
+                      onChange={(event) =>
                         setSelected({
                           ...selected,
-                          status: e.target.checked ? "active" : "inactive",
+                          status: event.target.checked ? "active" : "inactive",
                         })
                       }
                     />
@@ -253,12 +381,7 @@ export default function EmployeesPage() {
                   </label>
 
                   <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={saving}
-                      onClick={() => void save()}
-                    >
+                    <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save()}>
                       {saving ? "Saving…" : "Save"}
                     </button>
                     <button
@@ -276,55 +399,41 @@ export default function EmployeesPage() {
                     </p>
                   ) : null}
                 </div>
-              </section>
 
-              <section className="card">
-                <div className="flex items-baseline justify-between border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-2">
-                  <h2 className="text-[15px] font-semibold">This week&apos;s shifts</h2>
-                  <span className="text-xs text-[var(--muted)]">
-                    {week ? formatWeekRange(week.weekStart) : "Loading…"}
-                  </span>
-                </div>
-                {!week ? (
-                  <p className="px-4 py-3 text-sm text-[var(--muted)]">Loading schedule…</p>
-                ) : selectedShifts.length === 0 ? (
-                  <p className="px-4 py-3 text-sm text-[var(--muted)]">
-                    No shifts scheduled this week.
+                <div className="border-t border-[var(--border)]">
+                  <h3 className="px-4 pt-3 text-[15px]">This week&apos;s shifts</h3>
+                  {!week ? (
+                    <p className="px-4 py-3 text-sm text-[var(--muted)]">Loading schedule…</p>
+                  ) : selectedShifts.length === 0 ? (
+                    <p className="px-4 py-3 text-sm text-[var(--muted)]">No shifts scheduled this week.</p>
+                  ) : (
+                    <table className="w-full border-collapse text-sm tabular-nums">
+                      <tbody>
+                        {selectedShifts.map(({ date, shifts }) => (
+                          <tr key={date} className="border-b border-[var(--grid-line)] last:border-0">
+                            <td className="w-32 px-4 py-1.5 font-semibold">
+                              {DAY_LABELS[weekDates(week.weekStart).indexOf(date)] ?? dayOfWeekFromDate(date)}{" "}
+                              <span className="font-normal text-[var(--muted)]">{date.slice(5).replace("-", "/")}</span>
+                            </td>
+                            <td className="px-2 py-1.5 font-semibold">{shifts.map((shift) => shiftLine(shift)).join(" · ")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  <p className="border-t border-[var(--border)] px-4 py-2 text-xs text-[var(--muted)]">
+                    Edit shifts on the{" "}
+                    <a href="/admin/edit" className="font-semibold text-[var(--accent)] underline">
+                      weekly schedule
+                    </a>
+                    .
                   </p>
-                ) : (
-                  <table className="w-full border-collapse text-sm tabular-nums">
-                    <tbody>
-                      {selectedShifts.map(({ date, shifts }) => (
-                        <tr key={date} className="border-b border-[var(--grid-line)] last:border-0">
-                          <td className="w-32 px-4 py-1.5 font-semibold">
-                            {DAY_LABELS[weekDates(week.weekStart).indexOf(date)] ??
-                              dayOfWeekFromDate(date)}{" "}
-                            <span className="font-normal text-[var(--muted)]">
-                              {date.slice(5).replace("-", "/")}
-                            </span>
-                          </td>
-                          <td className="px-2 py-1.5 font-semibold">
-                            {shifts.map((s) => shiftLine(s)).join(" · ")}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                <p className="border-t border-[var(--border)] px-4 py-2 text-xs text-[var(--muted)]">
-                  Edit shifts on the{" "}
-                  <a href="/admin/edit" className="font-semibold text-[var(--accent)] underline">
-                    weekly schedule
-                  </a>
-                  .
-                </p>
-              </section>
-            </div>
-          ) : (
-            <p className="text-[var(--muted)]">Select an employee.</p>
-          )}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
-      </main>
+      ) : null}
     </div>
   );
 }

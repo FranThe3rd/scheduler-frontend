@@ -3,19 +3,20 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Printer } from "lucide-react";
-import { dayOfWeekFromDate, weekDates, formatWeekRange, minutesToLabel } from "@/lib/time";
+import { weekDates, formatWeekRange } from "@/lib/time";
 import { AppHeader } from "@/components/AppHeader";
 import { useAuth } from "@/components/AuthProvider";
+import { useEmployeeId } from "@/components/useClientSession";
 import { useAdminRequests } from "@/components/useScheduleRequests";
 import { ScheduleExportButtons } from "@/components/ScheduleExportButtons";
 import { CompactWeekGrid, buildGridRows } from "@/components/CompactWeekGrid";
+import { CoverageCheck } from "@/components/CoverageCheck";
 import { ScheduleTable } from "@/components/ScheduleTable";
 import { mergeTeamSchedule } from "@/lib/mergeTeamSchedule";
 import {
   subscribePublishedSchedule,
   type PublishedSchedule,
 } from "@/lib/publishedSchedules";
-import { revalidateWeek } from "@/lib/validation";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api/client";
 import type { Employee, WeekSchedule, StaffingIntervalTarget } from "@/lib/types";
@@ -29,6 +30,7 @@ type PrintPayload = {
 export default function PrintPage() {
   const params = useParams();
   const { isAdmin, schedulerVersion } = useAuth();
+  const employeeId = useEmployeeId();
   const { requests: adminRequests } = useAdminRequests();
   const weekStart = typeof params.weekStart === "string" ? params.weekStart : "";
   const backHref = isAdmin ? "/admin/edit" : "/me/schedule";
@@ -106,23 +108,14 @@ export default function PrintPage() {
     approvedRequests: (adminRequests ?? []).filter((request) => request.weekStart === weekStart),
   });
   const { week: displayWeek, employees, shifts } = merged;
-  const v = revalidateWeek({
-    shifts,
-    availability: displayWeek.availability,
-    employees,
-    targets: staffingTargets,
-    weekStart: displayWeek.weekStart,
-  });
   const dates = weekDates(displayWeek.weekStart);
-  const empMap = Object.fromEntries(employees.map((e) => [e.id, e]));
-  const coverage = v.coverage.filter((c) => c.status !== "no_target");
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[var(--bg)]">
       <div className="no-print">
         <AppHeader />
       </div>
-      <main className="app-nav-pad mx-auto max-w-5xl px-4 py-4 sm:px-6">
+      <main className="app-nav-pad mx-auto max-w-7xl px-4 py-4 sm:px-6">
         <div className="no-print mb-4 flex flex-wrap items-center gap-3">
           <button type="button" className="btn btn-primary" onClick={() => window.print()}>
             <Printer size={16} />
@@ -130,7 +123,7 @@ export default function PrintPage() {
           </button>
           <ScheduleExportButtons week={displayWeek} employees={employees} shifts={shifts} />
           <Link href={backHref} className="btn btn-ghost">
-            Back
+            {isAdmin ? "Back to schedule" : "Back to My schedule"}
           </Link>
         </div>
         {publishedError ? (
@@ -148,71 +141,39 @@ export default function PrintPage() {
           </p>
         </header>
 
-        {/* On screen: the same compact week view as the manager's Schedule tab. */}
+        {/* On screen: the same weekly table as the manager's Schedule tab. Read-only. */}
         <div className="mt-4 print:hidden">
           <CompactWeekGrid
             dates={dates}
-            rows={buildGridRows(employees, shifts, { onlyScheduled: true })}
+            rows={buildGridRows(employees, shifts)}
             shifts={shifts}
+            availability={displayWeek.availability}
+            highlightRowId={employeeId}
+            density="desk"
           />
-          <ul className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]" aria-label="Shift legend">
+          <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted)]" aria-label="Shift legend">
             <li className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#b7d7a8]" /> Main store
+              <span className="legend-dot shift-pill--linden" /> Linden
             </li>
             <li className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#f3d56a]" /> Lehigh (L)
+              <span className="legend-dot shift-pill--lehigh" /> Lehigh
             </li>
             <li className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#d7e4f8]" /> Ice cream (IC)
+              <span className="legend-dot shift-pill--ic" /> Ice cream
+            </li>
+            <li className="flex items-center gap-1.5">
+              <span className="legend-dot ring-2 ring-inset ring-[var(--conflict)]" /> Clashes with availability
             </li>
           </ul>
+          {isAdmin ? (
+            <CoverageCheck week={{ ...displayWeek, shifts, coverage: [] }} employees={employees} targets={staffingTargets} />
+          ) : null}
         </div>
         {/* On paper: the full printed table. */}
         <div className="table-scroll mt-6 print-table-wrap hidden print:block">
           <ScheduleTable week={displayWeek} employees={employees} shifts={shifts} />
         </div>
 
-        <div className="no-print mt-8 space-y-4 text-sm">
-        <h2 className="text-base font-semibold">Daily coverage recap</h2>
-        <div className="mt-3 space-y-4">
-          {dates.map((date) => {
-            const dayRows = coverage
-              .filter((c) => c.date === date)
-              .sort(
-                (a, b) =>
-                  a.location.localeCompare(b.location) || a.startMinutes - b.startMinutes
-              );
-            if (dayRows.length === 0) return null;
-            return (
-              <div key={date}>
-                <div className="font-semibold capitalize">
-                  {dayOfWeekFromDate(date)} {date.slice(5)}
-                </div>
-                <ul className="mt-1 space-y-1">
-                  {dayRows.map((c) => {
-                    const names = (c.assignedEmployeeIds ?? [])
-                      .map(
-                        (id) =>
-                          empMap[id]?.printedLabel ?? empMap[id]?.displayName ?? id
-                      )
-                      .join(", ");
-                    const short = Math.max(0, c.minimum - c.count);
-                    return (
-                      <li key={`${c.location}-${c.startMinutes}-${c.endMinutes}`}>
-                        {(c.location === "lehigh" ? "Lehi" : "Main") +
-                          ` ${minutesToLabel(c.startMinutes)}–${minutesToLabel(c.endMinutes)}` +
-                          ` · need ${c.minimum} · assigned ${c.count}` +
-                          (names ? ` (${names})` : "") +
-                          (short > 0 ? ` · SHORT BY ${short}` : " · covered")}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-        </div>
       </main>
     </div>
   );

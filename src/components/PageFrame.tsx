@@ -15,7 +15,7 @@ export function PageFrame({ children }: { children: ReactNode }) {
       <AppHeader />
       <motion.main
         key={pathname}
-        className="app-nav-pad mx-auto min-w-0 w-full max-w-6xl flex-1 px-4 pt-2 sm:px-6 lg:px-8"
+        className="app-nav-pad mx-auto min-w-0 w-full max-w-7xl flex-1 px-4 pt-4 sm:px-6 lg:px-8"
         initial={reduce ? false : { opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={pageTransition}

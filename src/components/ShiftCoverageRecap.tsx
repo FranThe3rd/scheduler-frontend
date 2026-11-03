@@ -10,9 +10,41 @@ import type { CoverageIntervalResult, Employee, Shift, StaffingIntervalTarget, W
 type Location = "linden" | "lehigh";
 
 const LOCATIONS: Array<{ id: Location; name: string }> = [
-  { id: "linden", name: "Main" },
-  { id: "lehigh", name: "Lehi" },
+  { id: "linden", name: "Linden" },
+  { id: "lehigh", name: "Lehigh" },
 ];
+
+/** Short lines for the schedule footer, using the same gap rules as the recap. */
+export function coverageGapSummaries(
+  week: WeekSchedule,
+  employees: Employee[],
+  targets: StaffingIntervalTarget[]
+): string[] {
+  const dates = weekDates(week.weekStart);
+  const coverage =
+    week.coverage.length > 0
+      ? week.coverage
+      : revalidateWeek({
+          shifts: week.shifts,
+          availability: week.availability,
+          employees,
+          targets,
+          weekStart: week.weekStart,
+        }).coverage;
+  const lines: string[] = [];
+  for (const date of dates) {
+    for (const { id, name } of LOCATIONS) {
+      const gaps = gapsFor(coverage.filter((row) => row.date === date && row.location === id));
+      for (const gap of gaps) {
+        const short = Math.max(1, gap.need - gap.have);
+        lines.push(
+          `${format(parseISO(date), "EEEE")} · ${name} · ${rangeLabel(gap.start, gap.end)} · Needs ${short} more`
+        );
+      }
+    }
+  }
+  return lines;
+}
 
 function rangeLabel(start: number, end: number): string {
   if (start % 60 === 0 && end % 60 === 0) return formatShiftCellCompact(start, end);
@@ -167,6 +199,148 @@ export function ShiftCoverageRecap({
             ) : null}
           </li>
         ))}
+      </ul>
+    </section>
+  );
+}
+
+type CheckShift = {
+  key: string;
+  name: string;
+  when: string;
+  place: "linden" | "lehigh" | "ic";
+};
+
+/**
+ * One short column per day: who is working, then only the hours that are short.
+ * Same gap rules as the recap. Selecting a day does not change the schedule.
+ */
+export function WeekCheck({
+  week,
+  employees,
+  targets,
+  activeDate,
+  onSelectDay,
+}: {
+  week: WeekSchedule;
+  employees: Employee[];
+  targets: StaffingIntervalTarget[];
+  activeDate?: string | null;
+  onSelectDay?: (date: string) => void;
+}) {
+  const dates = weekDates(week.weekStart);
+  const nameOf = (shift: Shift) => {
+    if (shift.employeeId) {
+      const employee = employees.find((item) => item.id === shift.employeeId);
+      return employee ? formatCompactEmployeeName(employee) : "Unknown";
+    }
+    return shift.unresolvedLabel || "Unassigned";
+  };
+  const coverage =
+    week.coverage.length > 0
+      ? week.coverage
+      : revalidateWeek({
+          shifts: week.shifts,
+          availability: week.availability,
+          employees,
+          targets,
+          weekStart: week.weekStart,
+        }).coverage;
+
+  const days = dates.map((date) => {
+    const dayShifts = week.shifts
+      .filter((shift) => shift.date === date)
+      .slice()
+      .sort((a, b) => (a.startMinutes ?? 24 * 60) - (b.startMinutes ?? 24 * 60));
+    const people: CheckShift[] = dayShifts.map((shift) => ({
+      key: shift.id,
+      name: nameOf(shift),
+      when:
+        shift.startMinutes != null && shift.endMinutes != null
+          ? rangeLabel(shift.startMinutes, shift.endMinutes)
+          : "IC",
+      place: shift.department === "ic" ? "ic" : shift.location === "lehigh" ? "lehigh" : "linden",
+    }));
+    const locationGaps = LOCATIONS.map(({ id, name }) => ({
+      name,
+      gaps: gapsFor(coverage.filter((row) => row.date === date && row.location === id)),
+    })).filter((location) => location.gaps.length > 0);
+    const showStore = locationGaps.length > 1;
+    const gaps = locationGaps.flatMap((location) =>
+      location.gaps.map((gap) => ({
+        key: `${location.name}-${gap.start}-${gap.end}`,
+        text: `${showStore ? `${location.name} ` : ""}${rangeLabel(gap.start, gap.end)} needs ${Math.max(1, gap.need - gap.have)}`,
+        width: Math.min(100, Math.round((gap.have / Math.max(gap.need, 1)) * 100)),
+      })),
+    );
+    return { date, people, gaps };
+  });
+
+  const shortDays = days.filter((day) => day.gaps.length > 0).length;
+
+  return (
+    <section className="card mt-4 p-4 shadow-none" aria-label="Who is on this week">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h2 className="text-lg">Who&apos;s on</h2>
+        <p className={`text-sm font-semibold ${shortDays === 0 ? "text-[#2f6b4f]" : "text-[#8d3d45]"}`}>
+          {week.shifts.length === 0
+            ? "No shifts yet"
+            : shortDays === 0
+              ? "No gaps"
+              : `${shortDays} ${shortDays === 1 ? "day is" : "days are"} short`}
+        </p>
+      </div>
+      <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        {days.map((day) => {
+          const selected = day.date === activeDate;
+          return (
+            <li key={day.date}>
+              <button
+                type="button"
+                className={`flex h-full w-full flex-col rounded-2xl p-2.5 text-left ${
+                  selected ? "bg-[#f3e6d4] ring-1 ring-[#c4a574]" : "bg-[var(--surface)]"
+                }`}
+                onClick={() => onSelectDay?.(day.date)}
+              >
+                <span className="flex items-baseline justify-between gap-1">
+                  <span className="text-sm font-semibold">{format(parseISO(day.date), "EEE")}</span>
+                  <span className="text-xs tabular-nums text-[var(--muted)]">{format(parseISO(day.date), "d")}</span>
+                </span>
+                {day.people.length === 0 ? (
+                  <span className="mt-1.5 text-xs text-[var(--muted)]">No shifts</span>
+                ) : (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {day.people.map((person) => (
+                      <li key={person.key} className="flex items-baseline gap-1.5 text-xs leading-snug">
+                        <span className={`legend-dot mt-1 shrink-0 shift-pill--${person.place}`} aria-hidden />
+                        <span className="min-w-0">
+                          <span className="font-semibold">{person.name}</span>{" "}
+                          <span className="tabular-nums text-[var(--muted)]">{person.when}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {day.gaps.length > 0 ? (
+                  <ul className="mt-2 space-y-1 border-t border-[var(--border)] pt-1.5">
+                    {day.gaps.map((gap) => (
+                      <li key={gap.key} className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight text-[#8d3d45]">
+                        <span className="h-1.5 w-6 shrink-0 overflow-hidden rounded-full bg-[#f3ddd4]" aria-hidden>
+                          <span className="block h-full rounded-full bg-[#d4533f]" style={{ width: `${gap.width}%` }} />
+                        </span>
+                        <span>{gap.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : day.people.length > 0 ? (
+                  <span className="mt-2 border-t border-[var(--border)] pt-1.5 text-[11px] font-semibold text-[#2f6b4f]">
+                    Covered
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

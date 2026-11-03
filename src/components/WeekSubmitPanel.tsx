@@ -82,6 +82,7 @@ export function WeekSubmitPanel({
   selectedDate,
   onSelectDay,
   editor,
+  presentation = "card",
 }: {
   weekStart: string;
   week: WeekSchedule | undefined;
@@ -96,6 +97,11 @@ export function WeekSubmitPanel({
   onSelectDay?: (date: string) => void;
   /** Inline day editor shown under the days when one is being edited here. */
   editor?: ReactNode;
+  /**
+   * `card` is the standalone week box. `actions` keeps the send / withdraw
+   * handlers and status, without the duplicate week grid.
+   */
+  presentation?: "card" | "actions";
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,31 +136,89 @@ export function WeekSubmitPanel({
     setBusy(false);
   }
 
+  const statusLabel =
+    status === "approved"
+      ? "Approved"
+      : status === "declined"
+        ? "Declined"
+        : status === "pending"
+          ? changed
+            ? "Sent · changed since"
+            : "Waiting for approval"
+          : "Not sent";
+  const statusClass =
+    status === "approved"
+      ? "bg-[#d9efd4] text-[#245033]"
+      : status === "declined"
+        ? "bg-[#f7d6d4] text-[#8d3d45]"
+        : status === "pending"
+          ? "bg-[#f6ead0] text-[#8a6a20]"
+          : "bg-[var(--surface-2)] text-[var(--muted)]";
+
+  const actions = status === "approved" ? (
+    <div className="mt-3 rounded-2xl bg-[#d9efd4] px-3 py-3 text-sm text-[#245033]">
+      <p className="font-semibold">Approved by your manager</p>
+      {request?.assignedShifts.length ? (
+        <ul className="mt-2 space-y-1">
+          {request.assignedShifts.map((shift) => (
+            <li key={shift.date}>
+              <span className="font-semibold">{format(parseISO(shift.date), "EEEE, MMMM d")}</span> ·{" "}
+              {formatShiftTimes(shift.startMinutes, shift.endMinutes)} ·{" "}
+              {shift.department === "ic" ? "Ice Cream" : "Floor"} ·{" "}
+              {shift.location === "lehigh" ? "Lehigh" : "Main store"}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1">This week is locked now.</p>
+      )}
+    </div>
+  ) : (
+    <>
+      {status === "declined" ? (
+        <p className="mt-3 text-sm text-[var(--muted)]">
+          Your manager declined this week. Change your days above and send it again.
+        </p>
+      ) : null}
+      {!hasDays ? <p className="mt-3 text-sm text-[var(--muted)]">Set at least one day first.</p> : null}
+      {error ? (
+        <p role="alert" className="mt-3 text-sm text-[var(--conflict)]">
+          {error}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        className="btn btn-primary mt-3 h-12 w-full rounded-full text-base"
+        disabled={busy || !hasDays || (status === "pending" && !changed)}
+        onClick={() => void send()}
+      >
+        {busy ? "Sending…" : status === "pending" ? (changed ? "Send update" : "Sent ✓") : "Confirm and send"}
+      </button>
+      {status === "pending" ? (
+        <button type="button" className="mt-2 text-sm font-semibold underline" disabled={busy} onClick={() => void withdraw()}>
+          Withdraw
+        </button>
+      ) : null}
+    </>
+  );
+
+  if (presentation === "actions") {
+    return (
+      <div aria-label="Send week for approval">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-sm font-semibold">Week of {formatWeekRange(weekStart)}</p>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass}`}>{statusLabel}</span>
+        </div>
+        {actions}
+      </div>
+    );
+  }
+
   return (
     <section className="card p-4 shadow-none" aria-label="Send week for approval">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg">{formatWeekRange(weekStart)}</h2>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-            status === "approved"
-              ? "bg-[#d9efd4] text-[#245033]"
-              : status === "declined"
-                ? "bg-[#f7d6d4] text-[#8d3d45]"
-                : status === "pending"
-                  ? "bg-[#f6ead0] text-[#8a6a20]"
-                  : "bg-[var(--surface-2)] text-[var(--muted)]"
-          }`}
-        >
-          {status === "approved"
-            ? "Approved"
-            : status === "declined"
-              ? "Declined"
-              : status === "pending"
-                ? changed
-                  ? "Sent · changed since"
-                  : "Waiting for approval"
-                : "Not sent"}
-        </span>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass}`}>{statusLabel}</span>
       </div>
       <ul className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold sm:text-[11px]">
         {dates.map((date) => {
@@ -191,60 +255,7 @@ export function WeekSubmitPanel({
         <p className="mt-2 text-xs text-[var(--muted)]">Tap a day to set it.</p>
       ) : null}
       {editor}
-      {status === "approved" ? (
-        <div className="mt-3 rounded-2xl bg-[#d9efd4] px-3 py-3 text-sm text-[#245033]">
-          <p className="font-semibold">Approved by your manager</p>
-          {request?.assignedShifts.length ? (
-            <ul className="mt-2 space-y-1">
-              {request.assignedShifts.map((shift) => (
-                <li key={shift.date}>
-                  <span className="font-semibold">{format(parseISO(shift.date), "EEEE, MMMM d")}</span> ·{" "}
-                  {formatShiftTimes(shift.startMinutes, shift.endMinutes)} ·{" "}
-                  {shift.department === "ic" ? "Ice Cream" : "Floor"} ·{" "}
-                  {shift.location === "lehigh" ? "Lehigh" : "Main store"}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-1">This week is locked now.</p>
-          )}
-        </div>
-      ) : (
-        <>
-          {status === "declined" ? (
-            <p className="mt-3 text-sm text-[var(--muted)]">
-              Your manager declined this week. Change your days above and send it again.
-            </p>
-          ) : null}
-          {!hasDays ? (
-            <p className="mt-3 text-sm text-[var(--muted)]">Set at least one day first.</p>
-          ) : null}
-          {error ? (
-            <p role="alert" className="mt-3 text-sm text-[var(--conflict)]">
-              {error}
-            </p>
-          ) : null}
-          <button
-            type="button"
-            className="btn btn-primary mt-3 h-12 w-full rounded-full text-base"
-            disabled={busy || !hasDays || (status === "pending" && !changed)}
-            onClick={() => void send()}
-          >
-            {busy
-              ? "Sending…"
-              : status === "pending"
-                ? changed
-                  ? "Update what I sent"
-                  : "Sent ✓"
-                : "Send week for approval"}
-          </button>
-          {status === "pending" ? (
-            <button type="button" className="mt-2 text-sm font-semibold underline" disabled={busy} onClick={() => void withdraw()}>
-              Withdraw
-            </button>
-          ) : null}
-        </>
-      )}
+      {actions}
     </section>
   );
 }

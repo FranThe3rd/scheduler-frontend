@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { ChevronDown, Clock, Minus } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { PageFrame } from "@/components/PageFrame";
@@ -9,7 +10,6 @@ import { StaggerList } from "@/components/MotionReveal";
 import { fadeUp, pageTransition } from "@/lib/motionPresets";
 import { useAuth } from "@/components/AuthProvider";
 import { useAdminRequests } from "@/components/useScheduleRequests";
-import { TONE_CHIP } from "@/components/WeekSubmitPanel";
 import { apiFetch } from "@/lib/api/client";
 import {
   deleteScheduleRequest,
@@ -20,7 +20,23 @@ import {
   type ScheduleRequest,
 } from "@/lib/scheduleRequests";
 import { publishEmployeeSchedule } from "@/lib/publishedSchedules";
-import { formatShiftTimes, formatWeekRange, minutesToLabel } from "@/lib/time";
+import { formatShiftTimes, formatWeekRange, minutesToLabel, weekDates } from "@/lib/time";
+
+const DAY_LETTERS = ["M", "T", "W", "Th", "F", "Sa", "Su"] as const;
+
+function compactHours(start: number | null, end: number | null): string {
+  if (start == null || end == null) return "IC";
+  const startLabel = minutesToLabel(start);
+  const endLabel = minutesToLabel(end);
+  const startSpace = startLabel.lastIndexOf(" ");
+  const endSpace = endLabel.lastIndexOf(" ");
+  const startClock = startLabel.slice(0, startSpace);
+  const endClock = endLabel.slice(0, endSpace);
+  const startMer = startLabel.slice(startSpace + 1);
+  const endMer = endLabel.slice(endSpace + 1);
+  if (startMer === endMer) return `${startClock}–${endClock} ${endMer}`;
+  return `${startClock} ${startMer}–${endClock} ${endMer}`;
+}
 
 const STATUS_STYLE: Record<RequestStatus, string> = {
   pending: "bg-[#f6ead0] text-[#8a6a20]",
@@ -55,6 +71,12 @@ function RequestCard({ request, adminEmail }: { request: ScheduleRequest; adminE
   const reduce = useReducedMotion();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const datedDays = Object.entries(request.days).sort(([a], [b]) => a.localeCompare(b));
+  const limitedDays = datedDays.filter(([, day]) => day.tone === "limited");
+  const offDays = datedDays.filter(([, day]) => day.tone === "off");
+  const availableDays = datedDays.filter(([, day]) => day.tone === "available");
+  const limitedCount = limitedDays.length;
+  const signedOffCount = offDays.length;
   const workingDates = Object.entries(request.days)
     .filter(([, day]) => day.tone !== "off")
     .sort(([a], [b]) => a.localeCompare(b))
@@ -140,29 +162,82 @@ function RequestCard({ request, adminEmail }: { request: ScheduleRequest; adminE
   }
 
   return (
-    <motion.li
-      className="card p-4 shadow-none"
-      variants={reduce ? undefined : fadeUp}
-      transition={pageTransition}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="font-serif text-lg leading-tight">{request.name}</p>
-          <p className="text-sm text-[var(--muted)]">{formatWeekRange(request.weekStart)}</p>
-        </div>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_STYLE[request.status]}`}>
-          {request.status}
-        </span>
-      </div>
-      <ul className="mt-3 flex flex-wrap gap-1.5">
-        {Object.entries(request.days)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([date, day]) => (
-            <li key={date} className={`rounded-full px-2.5 py-1 text-xs font-semibold ${TONE_CHIP[day.tone] ?? ""}`}>
-              {format(parseISO(date), "EEE d")} · {day.text}
-            </li>
-          ))}
-      </ul>
+    <motion.li className="h-full" variants={reduce ? undefined : fadeUp} transition={pageTransition}>
+      <details className="card group flex h-full min-h-48 flex-col shadow-none">
+        <summary className="flex min-h-48 flex-1 cursor-pointer list-none flex-col px-5 py-5 hover:bg-[var(--surface-2)] [&::-webkit-details-marker]:hidden">
+          <span className="flex items-start justify-between gap-3">
+            <span className="min-w-0 truncate text-lg font-semibold leading-tight">{request.name}</span>
+            <ChevronDown size={18} className="mt-1 shrink-0 text-[var(--muted)] transition-transform group-open:rotate-180" aria-hidden />
+          </span>
+          <span className="mt-3 flex flex-col gap-2">
+            <span className="flex items-center gap-2.5">
+              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#e0941a] text-white" aria-hidden>
+                <Clock size={15} strokeWidth={2.5} />
+              </span>
+              <span className="text-base font-semibold tabular-nums">{limitedCount}</span>
+              <span className="text-sm font-semibold">limited hours</span>
+            </span>
+            <span className="flex items-center gap-2.5">
+              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#d4533f] text-white" aria-hidden>
+                <Minus size={16} strokeWidth={3} />
+              </span>
+              <span className="text-base font-semibold tabular-nums">{signedOffCount}</span>
+              <span className="text-sm font-semibold">days off</span>
+            </span>
+          </span>
+          <span className="mt-1 truncate text-sm text-[var(--muted)]">{formatWeekRange(request.weekStart)}</span>
+          <span className={`mt-auto w-fit rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_STYLE[request.status]}`}>
+            {request.status}
+          </span>
+        </summary>
+        <div className="border-t border-[var(--border)] px-4 pb-4">
+      {limitedDays.length > 0 ? (
+        <section className="mt-3 rounded-2xl bg-[#f8e7c4] p-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-[#8a5a12]">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#e0941a] text-white" aria-hidden>
+              <Clock size={13} strokeWidth={2.5} />
+            </span>
+            Limited hours
+          </p>
+          <ul className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {limitedDays.map(([date, day]) => (
+              <li key={date} className="rounded-xl bg-white/80 px-2.5 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8a5a12]">{format(parseISO(date), "EEE")}</p>
+                <p className="text-sm font-semibold">{format(parseISO(date), "MMM d")}</p>
+                <p className="mt-1 text-sm font-semibold tabular-nums">
+                  {day.startMinutes != null && day.endMinutes != null
+                    ? formatShiftTimes(day.startMinutes, day.endMinutes)
+                    : day.text}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {offDays.length > 0 ? (
+        <section className="mt-2 rounded-2xl bg-[#f8d6d8] p-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-[#8d3a42]">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#d4533f] text-white" aria-hidden>
+              <Minus size={14} strokeWidth={3} />
+            </span>
+            Days off
+          </p>
+          <ul className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {offDays.map(([date]) => (
+              <li key={date} className="rounded-xl bg-white/80 px-2.5 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8d3a42]">{format(parseISO(date), "EEE")}</p>
+                <p className="text-sm font-semibold">{format(parseISO(date), "MMM d")}</p>
+                <p className="mt-1 text-sm font-semibold">Off</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {availableDays.length > 0 ? (
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          Available all day: {availableDays.map(([date]) => format(parseISO(date), "EEE d")).join(", ")}
+        </p>
+      ) : null}
       {error ? <p className="mt-2 text-sm text-[var(--conflict)]">{error}</p> : null}
       {request.status === "pending" ? (
         <fieldset className="mt-4 border-t border-[var(--border)] pt-3">
@@ -237,25 +312,33 @@ function RequestCard({ request, adminEmail }: { request: ScheduleRequest; adminE
           )}
         </fieldset>
       ) : request.assignedShifts.length ? (
-        <div className="mt-3 rounded-xl bg-[var(--surface-2)] px-3 py-2 text-sm">
-          <p className="font-semibold">Assigned schedule</p>
-          <ul className="mt-1 space-y-1">
-            {request.assignedShifts.map((shift) => (
-              <li key={shift.date}>
-                {format(parseISO(shift.date), "EEEE, MMM d")} ·{" "}
-                {formatShiftTimes(shift.startMinutes, shift.endMinutes)} ·{" "}
-                {shift.department === "ic" ? "Ice Cream" : "Floor"} ·{" "}
-                {shift.location === "lehigh" ? "Lehigh" : "Main store"}
-              </li>
-            ))}
-          </ul>
-          <Link
-            href={`/print/${request.weekStart}`}
-            className="mt-2 inline-block font-semibold underline"
-          >
+        <section className="mt-2 rounded-2xl bg-[#e5f4ea] p-3">
+          <p className="text-sm font-semibold">Assigned schedule</p>
+          <ol className="mt-2 grid grid-cols-7 gap-1">
+            {weekDates(request.weekStart).map((date, index) => {
+              const dayShifts = request.assignedShifts.filter((shift) => shift.date === date);
+              return (
+                <li key={date} className={`rounded-lg px-0.5 py-1.5 text-center ${dayShifts.length ? "bg-white" : ""}`}>
+                  <p className="text-[11px] font-semibold text-[var(--muted)]">{DAY_LETTERS[index]}</p>
+                  {dayShifts.length === 0 ? (
+                    <p className="mt-1 text-xs text-[var(--muted)]">—</p>
+                  ) : (
+                    dayShifts.map((shift) => (
+                      <p key={`${shift.date}-${shift.startMinutes}-${shift.department}`} className="mt-1 text-[11px] font-semibold leading-tight">
+                        {compactHours(shift.startMinutes, shift.endMinutes)}
+                        {shift.location === "lehigh" ? <span className="block font-normal text-[var(--muted)]">Lehigh</span> : null}
+                        {shift.department === "ic" ? <span className="block font-normal text-[var(--muted)]">IC</span> : null}
+                      </p>
+                    ))
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          <Link href={`/print/${request.weekStart}`} className="mt-2 inline-block text-sm font-semibold underline">
             View full staff schedule
           </Link>
-        </div>
+        </section>
       ) : null}
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {request.status === "pending" ? (
@@ -302,6 +385,8 @@ function RequestCard({ request, adminEmail }: { request: ScheduleRequest; adminE
           </div>
         )}
       </div>
+        </div>
+      </details>
     </motion.li>
   );
 }
@@ -359,7 +444,7 @@ export default function RequestsPage() {
             {pending.length === 0 ? (
               <p className="mt-2 text-sm text-[var(--muted)]">No requests waiting.</p>
             ) : (
-              <StaggerList className="mt-2 grid gap-3 sm:grid-cols-2">
+              <StaggerList className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {pending.map((request) => (
                   <RequestCard key={request.id} request={request} adminEmail={email} />
                 ))}
@@ -369,7 +454,7 @@ export default function RequestsPage() {
           {decided.length > 0 ? (
             <section className="mt-6">
               <h2 className="text-lg">Already decided</h2>
-              <StaggerList className="mt-2 grid gap-3 sm:grid-cols-2">
+              <StaggerList className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {decided.map((request) => (
                   <RequestCard key={request.id} request={request} adminEmail={email} />
                 ))}
