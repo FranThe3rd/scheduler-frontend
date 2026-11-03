@@ -218,7 +218,7 @@ export function WeeklySchedulePage() {
 
   return (
     <PageFrame>
-      <div className="flex items-end justify-between gap-2">
+      <div className="flex items-end justify-between gap-2 max-[799px]:flex-col max-[799px]:items-start max-[799px]:gap-3">
         <div className="min-w-0">
           <h1 className="flex flex-wrap items-center gap-2 text-[1.85rem] leading-none sm:text-[2rem]">
             Weekly schedule
@@ -226,7 +226,7 @@ export function WeeklySchedulePage() {
           </h1>
           <p className="mt-1 text-sm text-[var(--muted)]">Assign shifts and locations. Review coverage before publishing.</p>
         </div>
-        <div className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] p-1">
+        <div className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] p-1 max-[799px]:shrink-0">
           <button
             type="button"
             className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-[var(--surface-2)]"
@@ -235,7 +235,7 @@ export function WeeklySchedulePage() {
           >
             <ChevronLeft size={18} />
           </button>
-          <span className="px-1 text-sm font-semibold">{formatWeekRange(weekStart)}</span>
+          <span className="px-1 text-sm font-semibold max-[799px]:whitespace-nowrap">{formatWeekRange(weekStart)}</span>
           <button
             type="button"
             className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-[var(--surface-2)]"

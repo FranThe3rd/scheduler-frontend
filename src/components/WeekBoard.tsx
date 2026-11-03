@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { format, parseISO } from "date-fns";
 import type { ReactNode } from "react";
+import { WaffleScrollCover } from "@/components/WaffleScrollCover";
 
 export type WeekBoardRow = { id: string; name: string };
 
@@ -31,6 +33,7 @@ export function WeekBoard({
   onDay,
   caption = "Week",
   density = "regular",
+  schedule = false,
 }: {
   dates: string[];
   rows: WeekBoardRow[];
@@ -41,13 +44,20 @@ export function WeekBoard({
   caption?: string;
   /** Desktop admin boards: shorter rows so the roster fits in about one scroll. */
   density?: "regular" | "desk";
+  /** Schedule grids get a phone layout that keeps every day on screen. */
+  schedule?: boolean;
 }) {
   const desk = density === "desk";
+  const headRef = useRef<HTMLTableSectionElement>(null);
+  const tableClass = ["week-board", desk ? "week-board--desk" : "", schedule ? "week-board--schedule" : ""]
+    .filter(Boolean)
+    .join(" ");
   return (
     <div className="week-board-scroll">
-      <table className={desk ? "week-board week-board--desk" : "week-board"}>
+      {schedule ? <WaffleScrollCover anchorRef={headRef} /> : null}
+      <table className={tableClass}>
         <caption className="sr-only">{caption}</caption>
-        <thead>
+        <thead ref={headRef}>
           <tr>
             <th className="week-board-name" scope="col">
               Employee

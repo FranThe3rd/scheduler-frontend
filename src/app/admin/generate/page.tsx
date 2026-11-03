@@ -169,6 +169,7 @@ export default function AvailabilityPage() {
             dates={dates}
             rows={rows}
             density="desk"
+            schedule
             caption="Weekly availability"
             renderCell={(row, date) => {
               const cell = cellFor(row.id, date);
