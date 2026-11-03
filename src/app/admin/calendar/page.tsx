@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { addDays, format, parseISO, startOfMonth } from "date-fns";
 import { PageFrame } from "@/components/PageFrame";
@@ -9,6 +9,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useAdminRequests } from "@/components/useScheduleRequests";
 import { useToday } from "@/components/useClientSession";
 import { chipStyle } from "@/components/shiftChip";
+import { WaffleScrollCover } from "@/components/WaffleScrollCover";
 import type { AvailabilityTone } from "@/components/availabilityTone";
 import { apiFetch } from "@/lib/api/client";
 import { mergeTeamSchedule } from "@/lib/mergeTeamSchedule";
@@ -46,6 +47,7 @@ export default function TeamCalendarPage() {
   const [error, setError] = useState<string | null>(null);
 
   const selected = picked ?? today;
+  const weekHeadRef = useRef<HTMLTableSectionElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,9 +176,10 @@ export default function TeamCalendarPage() {
               No staff yet. Employees show up here automatically after they sign in with Google.
             </p>
           ) : (
-            <div className="mt-2 overflow-x-auto">
+            <div className="week-chip-scroll mt-2">
+              <WaffleScrollCover anchorRef={weekHeadRef} />
               <table className="week-chip-table text-xs">
-                <thead>
+                <thead ref={weekHeadRef}>
                   <tr>
                     <th className="pb-2 pr-2 text-left font-semibold text-[var(--muted)]">Employee</th>
                     {dates.map((date) => (

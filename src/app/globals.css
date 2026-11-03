@@ -180,6 +180,26 @@ h3 {
   color: #f7f1e6;
 }
 
+@media screen and (max-width: 799px) {
+  /* While the day row is pinned, a waffle strip hangs above it so rows that
+     scrolled past don't show through Safari's see-through top bar. */
+  .week-board--schedule thead.is-pinned th:last-child::before,
+  .sched-matrix thead.is-pinned th:last-child::before,
+  .week-chip-table thead.is-pinned th:last-child::before {
+    content: "";
+    position: absolute;
+    left: -100vw;
+    right: -100vw;
+    bottom: 100%;
+    height: 400px;
+    pointer-events: none;
+    background-color: #3c291c;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(255, 244, 228, 0.16) 0 1px, transparent 1px 11px),
+      repeating-linear-gradient(-45deg, rgba(255, 244, 228, 0.16) 0 1px, transparent 1px 11px);
+  }
+}
+
 .nav-active {
   color: #d4533f;
 }
@@ -1256,6 +1276,284 @@ div.week-board-cell {
 
   .week-board--desk tbody tr:hover td.is-selected {
     background: #e6d3b4;
+  }
+}
+
+/* Phone schedule boards: every weekday stays on screen, and the day row
+   sticks while the roster scrolls. Desktop rules above are unchanged. */
+.shift-pill-time--short,
+.sched-matrix-short {
+  display: none;
+}
+
+.week-chip-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media screen and (max-width: 799px) {
+  /* Sticky side columns and the wide sideways scroller make iPhone scroll hitch.
+     These boards fit the screen, so only the day row stays pinned. */
+  .week-board-scroll:has(.week-board--schedule) {
+    overflow: visible;
+    box-shadow: none;
+    overscroll-behavior-x: auto;
+  }
+
+  .week-board--schedule,
+  .week-board--schedule button,
+  .sched-matrix,
+  .sched-matrix button,
+  .week-chip-table,
+  .week-chip-table button {
+    touch-action: pan-y;
+  }
+
+  .week-board--schedule tbody th.week-board-name,
+  .sched-matrix tbody td:first-child,
+  .week-chip-table tbody th {
+    position: static;
+    box-shadow: none;
+  }
+
+  .week-board--schedule thead th,
+  .sched-matrix thead th,
+  .week-chip-table thead th {
+    box-shadow: none;
+  }
+
+  .week-board--schedule thead th.week-board-name,
+  .week-chip-table thead th:first-child {
+    left: auto;
+  }
+
+  .week-board--schedule {
+    min-width: 0;
+    width: 100%;
+    font-size: 11px;
+  }
+
+  .week-board--schedule .week-board-dow--long,
+  .week-board--schedule .shift-pill-time--full,
+  .week-board--schedule .shift-pill-place,
+  .sched-matrix-long {
+    display: none;
+  }
+
+  .week-board--schedule .week-board-dow--short,
+  .week-board--schedule .shift-pill-time--short,
+  .sched-matrix-short {
+    display: block;
+  }
+
+  .week-board--schedule thead th.week-board-name,
+  .week-board--schedule tbody th.week-board-name {
+    width: 4.35rem;
+    min-width: 4.35rem;
+    max-width: 4.35rem;
+    padding: 0.2rem 0.35rem;
+  }
+
+  .week-board--schedule tbody th.week-board-name {
+    font-size: 12px;
+    line-height: 1.15;
+    padding-top: 0.22rem;
+    padding-bottom: 0.22rem;
+  }
+
+  .week-board--schedule .week-board-dow--short,
+  .week-board--schedule .week-board-dom {
+    font-size: 10px;
+    line-height: 1.15;
+  }
+
+  .week-board--schedule thead button,
+  .week-board--schedule thead th > span {
+    min-height: 1.7rem;
+    padding-top: 0.1rem;
+    padding-bottom: 0.1rem;
+  }
+
+  .week-board--schedule td {
+    padding: 0.12rem 0.04rem;
+  }
+
+  .week-board--schedule .week-board-cell {
+    min-height: 1.25rem;
+    gap: 0;
+  }
+
+  .week-board--schedule .week-board-cell:has(.avail-pill),
+  .week-board--schedule .week-board-cell:has(.week-board-dash) {
+    min-height: 1.7rem;
+    align-items: center;
+  }
+
+  .week-board--schedule .avail-pill {
+    width: 1.65rem;
+    height: 1.65rem;
+    min-height: 1.65rem;
+    max-width: 1.65rem;
+    margin-inline: auto;
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+    font-size: 0;
+    line-height: 0;
+  }
+
+  .week-board--schedule .avail-pill svg {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+  }
+
+  .week-board--schedule .shift-pill {
+    min-height: 1.15rem;
+    flex-direction: row;
+    border-radius: 6px;
+    padding: 0.04rem 0.08rem;
+  }
+
+  .week-board--schedule .shift-pill-time--short {
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .week-board--schedule .week-board-dash {
+    font-size: 12px;
+  }
+
+  .week-board--schedule th,
+  .week-board--schedule td {
+    border-bottom-color: #e4d6c3;
+  }
+
+  .week-board--schedule thead th.week-board-name,
+  .week-board--schedule tbody th.week-board-name {
+    border-right: 1px solid var(--border);
+  }
+
+  .week-board--schedule thead th + th,
+  .week-board--schedule tbody td + td {
+    border-left: 1px solid #e4d6c3;
+  }
+
+  .week-board--schedule tbody tr:nth-child(even) th.week-board-name,
+  .week-board--schedule tbody tr:nth-child(even) td {
+    background: #f6f0e6;
+  }
+
+  .week-board--schedule tbody td.is-selected,
+  .week-board--schedule tbody tr:nth-child(even) td.is-selected {
+    background: #f0e0c8;
+  }
+
+  .week-board--schedule tbody tr.week-board-row--me th.week-board-name,
+  .week-board--schedule tbody tr.week-board-row--me td {
+    background: #f8f1e4;
+  }
+
+  .table-scroll:has(.sched-matrix),
+  .week-chip-scroll {
+    overflow: visible;
+  }
+
+  .sched-matrix {
+    table-layout: fixed;
+    font-size: 10px;
+  }
+
+  .sched-matrix thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--surface-2);
+    text-align: center;
+    padding: 0.2rem 0.05rem;
+  }
+
+  .sched-matrix thead th:first-child,
+  .sched-matrix tbody td:first-child {
+    width: 4.35rem;
+    max-width: 4.35rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+
+  .sched-matrix thead th:first-child {
+    z-index: 5;
+    background: var(--surface-2);
+  }
+
+  .sched-matrix tbody td {
+    padding: 0.15rem 0.05rem;
+  }
+
+  .sched-matrix tbody td:first-child {
+    z-index: 2;
+    background: var(--surface);
+    font-size: 11px;
+  }
+
+  .week-chip-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .week-chip-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    min-width: 0;
+    background: var(--bg);
+    padding-bottom: 0.2rem;
+  }
+
+  .week-chip-table thead th:first-child,
+  .week-chip-table tbody th {
+    width: 4.35rem;
+    max-width: 4.35rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: var(--bg);
+  }
+
+  .week-chip-table thead th:first-child {
+    z-index: 5;
+  }
+
+  .week-chip-table tbody th {
+    z-index: 2;
+    font-size: 11px;
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
+  }
+
+  .week-chip-table td {
+    padding: 0.1rem 0;
+  }
+
+  .week-chip-table td span {
+    min-width: 0;
+    min-height: 1.15rem;
+    max-width: 100%;
+    padding-left: 1px;
+    padding-right: 1px;
+    font-size: 9px;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 

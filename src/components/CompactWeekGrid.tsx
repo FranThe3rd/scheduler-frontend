@@ -8,6 +8,7 @@ import {
   shiftAvailabilityConflict,
 } from "@/components/availabilityTone";
 import { buildShortNames } from "@/lib/displayName";
+import { shiftToCellText } from "@/lib/shiftCellText";
 import { formatShiftTimes } from "@/lib/time";
 import type { Employee, Shift, WeekAvailability } from "@/lib/types";
 
@@ -93,6 +94,7 @@ export function CompactWeekGrid({
       highlightRowId={highlightRowId}
       onDay={onDay}
       density={density}
+      schedule
       caption="Weekly schedule"
       renderCell={(row, date) => {
         const cellShifts = shiftsForRow(shifts, row.id, date);
@@ -111,7 +113,8 @@ export function CompactWeekGrid({
                   title={clash ?? undefined}
                   className={`shift-pill shift-pill--${shiftPlaceKind(shift)} ${clash ? "shift-pill--clash" : ""}`}
                 >
-                  <span className="shift-pill-time">{shiftTimeLabel(shift)}</span>
+                  <span className="shift-pill-time shift-pill-time--full">{shiftTimeLabel(shift)}</span>
+                  <span className="shift-pill-time shift-pill-time--short">{shiftToCellText(shift)}</span>
                   <span className="shift-pill-place">{shiftPlaceLabel(shift)}</span>
                 </span>
               );
